@@ -5,7 +5,6 @@
 		<ImplicitUsings>true</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<LangVersion>latest</LangVersion>
-		<SelfContained>true</SelfContained>
 		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
 		<TargetName>AiPullRequestAssistor</TargetName>
 		<Version>0.0.1</Version>

@@ -95,136 +95,46 @@ internal class Program
 		GitCommitChanges commitChanges =
 			await gitClient.GetChangesAsync(projectName, commit.CommitId, repositoryName);
 
-		StringBuilder chatMessageBuilder = new();
 
-		chatMessageBuilder.AppendLine(
-			"""
-				Act as a code reviewer and provide constructive feedback on the following changes.
-				Give a minimum of one and a maximum of five suggestions per file most relevant first.
-				Use markdown as the output if possible.
-			""");
+		List<ChangePrompt> changeInputs =
+			await GetFileChangeInput(commitChanges, gitClient, projectName, repositoryName, pullRequest);
 
-		chatMessageBuilder.AppendLine($"The following files are updates in a pull request:");
-		
-		foreach (GitChange commitChange in commitChanges.Changes.Where(c =>
-			         !c.Item.IsFolder && c.ChangeType is VersionControlChangeType.Edit or VersionControlChangeType.Add))
-		{
-			using Stream afterMergeFileContents = await gitClient.GetItemTextAsync(projectName, repositoryName,
-				path: commitChange.Item.Path, versionDescriptor: new GitVersionDescriptor
-				{
-					VersionType = GitVersionType.Commit,
-					Version = pullRequest.LastMergeCommit.CommitId,
-				});
-
-			using Stream beforeMergeFileContents = await gitClient.GetItemTextAsync(projectName, repositoryName,
-				path: commitChange.Item.Path, versionDescriptor: new GitVersionDescriptor
-				{
-					VersionType = GitVersionType.Commit,
-					Version = pullRequest.LastMergeTargetCommit.CommitId,
-				});
-
-			using StreamReader sr = new StreamReader(afterMergeFileContents);
-			string afterMergeContent = await sr.ReadToEndAsync();
-
-			if (commitChange.ChangeType == VersionControlChangeType.Add)
-			{
-				chatMessageBuilder.AppendLine($"The following code was added:");
-				chatMessageBuilder.AppendLine($"{commitChange.Item.Path}");
-				chatMessageBuilder.AppendLine("```");
-				chatMessageBuilder.AppendLine(afterMergeContent);
-				chatMessageBuilder.AppendLine("```");
-			}
-
-			else if (commitChange.ChangeType == VersionControlChangeType.Edit)
-			{
-				chatMessageBuilder.AppendLine($"The following code was edited:");
-				chatMessageBuilder.AppendLine($"{commitChange.Item.Path}");
-				using StreamReader sr1 = new StreamReader(beforeMergeFileContents);
-				
-				var differ = new InlineDiffBuilder(new Differ());
-				var diff = differ.BuildDiffModel(await sr1.ReadToEndAsync(), afterMergeContent, true);
-
-				StringBuilder diffBuilder = new();
-				diffBuilder.AppendLine("--- " + commitChange.Item.Path);
-				diffBuilder.AppendLine("+++ " + commitChange.Item.Path);
-
-				foreach (var line in diff.Lines)
-				{
-					switch (line.Type)
-					{
-						case ChangeType.Inserted:
-							diffBuilder.AppendLine("+ " + line.Text);
-							break;
-						case ChangeType.Deleted:
-							diffBuilder.AppendLine("- " + line.Text);
-							break;
-						default:
-							diffBuilder.AppendLine("  " + line.Text);
-							break;
-					}
-				}
-				chatMessageBuilder.AppendLine("```diff");
-				chatMessageBuilder.AppendLine(diffBuilder.ToString());
-				chatMessageBuilder.AppendLine("```");
-			}
-		}
 		var openAiService = new OpenAIService(new OpenAiOptions()
 		{
 			ApiKey = openAiToken
 		});
 
 		string model = Models.ChatGpt3_5Turbo;
+		StringBuilder chatMessageBuilder = new();
 
-		string prompt = chatMessageBuilder.Replace("\r\n","\n").ToString();
+		BuildInitialInstruction(chatMessageBuilder);
 
-		string response;
-		string costString;
-		if (model == Models.ChatGpt3_5Turbo)
+		int maxToken = 3500;
+		int tokenCount = 0;
+		double costCent = 0;
+
+		StringBuilder response = new();
+
+		bool initial = true;
+
+		foreach (var input in changeInputs.Where(c => c.Content.Length / 4 < maxToken))
 		{
-			ChatCompletionCreateResponse completionResult = await openAiService.ChatCompletion.CreateCompletion(
-				new ChatCompletionCreateRequest
-				{
-					Messages = new List<ChatMessage>
-					{
-						ChatMessage.FromUser(prompt)
-					},
-
-					Model = model
-				});
-			if (completionResult.Successful)
+			if ((input.Content.Length + chatMessageBuilder.Length) / 4 > maxToken)
 			{
-				Console.WriteLine(completionResult.Choices.First().Message.Content);
+				(tokenCount, costCent) =
+					await AskAi(chatMessageBuilder, model, openAiService, response, tokenCount, costCent);
+				chatMessageBuilder = new StringBuilder();
+				BuildInitialInstruction(chatMessageBuilder);
 			}
 
-			response = completionResult.Choices.First().Message.Content;
-			costString =
-				"{completionResult.Usage.TotalTokens} tokens {2 * completionResult.Usage.TotalTokens/1000.0:F1} cents";
+			input.AddToMessage(chatMessageBuilder);
 		}
-		else if (model == Models.CodeDavinciV2)
-		{
-			var completionResult = await openAiService.CreateCompletion(new CompletionCreateRequest()
-			{
-				Model = model,
-				Prompt = prompt
-			});
 
-			if (completionResult.Successful)
-			{
-				Console.WriteLine(completionResult.Choices.First().Text);
-			}
-
-			response = completionResult.Choices.First().Text;
-			costString =
-				$"{completionResult.Usage.TotalTokens} tokens {0.2 * completionResult.Usage.TotalTokens/1000.0:F1} cents";
-		}
-		else
-		{
-			throw new Exception("Invalid model");
-		}
+		(tokenCount, costCent) = await AskAi(chatMessageBuilder, model, openAiService, response, tokenCount, costCent);
 
 		StringBuilder commentBuilder = new();
-		commentBuilder.AppendLine($"## AI Suggestions ({model} - {costString})");
-		commentBuilder.AppendLine(response);
+		commentBuilder.AppendLine($"## AI Suggestions ({model} - {tokenCount} token {costCent:F1} cent)");
+		commentBuilder.AppendLine(response.ToString());
 
 		Comment comment = new()
 		{
@@ -258,5 +168,145 @@ internal class Program
 			await gitClient.CreateThreadAsync(commentThread, projectName, repositoryId: repositoryName,
 				pullRequestId: pullRequestId);
 		}
+	}
+
+	private static void BuildInitialInstruction(StringBuilder chatMessageBuilder)
+	{
+		chatMessageBuilder.AppendLine(
+			"""
+				Act as a code reviewer and provide constructive feedback on the following changes.
+				Give a minimum of one and a maximum of five suggestions per file most relevant first.
+				Use markdown as the output if possible.
+			""");
+
+		chatMessageBuilder.AppendLine($"The following files are updates in a pull request:");
+	}
+
+	private static async Task<(int tokenCount, double costCent)> AskAi(StringBuilder chatMessageBuilder, string model,
+		OpenAIService openAiService,
+		StringBuilder response, int tokenCount, double costCent)
+	{
+		// Max size reached, we ask ChatGTP
+		string prompt = chatMessageBuilder.Replace("\r\n", "\n").ToString();
+		if (model == Models.ChatGpt3_5Turbo)
+		{
+			ChatCompletionCreateResponse completionResult = await openAiService.ChatCompletion.CreateCompletion(
+				new ChatCompletionCreateRequest
+				{
+					Messages = new List<ChatMessage>
+					{
+						ChatMessage.FromUser(prompt)
+					},
+
+					Model = model
+				});
+			if (completionResult.Successful)
+			{
+				Console.WriteLine(completionResult.Choices.First().Message.Content);
+			}
+
+			response.AppendLine(completionResult.Choices.First().Message.Content);
+			tokenCount += completionResult.Usage.TotalTokens;
+			costCent += 0.2 * completionResult.Usage.TotalTokens / 1000.0;
+		}
+		else if (model == Models.CodeDavinciV2)
+		{
+			var completionResult = await openAiService.CreateCompletion(new CompletionCreateRequest()
+			{
+				Model = model,
+				Prompt = prompt
+			});
+
+			if (completionResult.Successful)
+			{
+				Console.WriteLine(completionResult.Choices.First().Text);
+			}
+
+			response.AppendLine(completionResult.Choices.First().Text);
+			tokenCount += completionResult.Usage.TotalTokens;
+			costCent += 0.2 * completionResult.Usage.TotalTokens / 1000.0;
+		}
+		else
+		{
+			throw new Exception("Invalid model");
+		}
+
+		return (tokenCount, costCent);
+	}
+
+	private static async Task<List<ChangePrompt>> GetFileChangeInput(GitCommitChanges commitChanges,
+		GitHttpClient gitClient,
+		string projectName, string repositoryName, GitPullRequest pullRequest)
+	{
+		List<ChangePrompt> inputs = new();
+		foreach (GitChange commitChange in commitChanges.Changes.Where(c =>
+			         !c.Item.IsFolder && c.ChangeType is VersionControlChangeType.Edit or VersionControlChangeType.Add))
+		{
+			using Stream afterMergeFileContents = await gitClient.GetItemTextAsync(projectName, repositoryName,
+				path: commitChange.Item.Path, versionDescriptor: new GitVersionDescriptor
+				{
+					VersionType = GitVersionType.Commit,
+					Version = pullRequest.LastMergeCommit.CommitId,
+				});
+
+			using StreamReader sr = new StreamReader(afterMergeFileContents);
+			string afterMergeContent = await sr.ReadToEndAsync();
+
+			if (commitChange.ChangeType == VersionControlChangeType.Add)
+			{
+				StringBuilder addBuilder = new();
+				addBuilder.AppendLine("```diff");
+				addBuilder.AppendLine(afterMergeContent);
+				addBuilder.AppendLine("```");
+				inputs.Add(new ChangePrompt(VersionControlChangeType.Add,
+					commitChange.Item.Path,
+					afterMergeContent
+				));
+			}
+			else if (commitChange.ChangeType == VersionControlChangeType.Edit)
+			{
+				using Stream beforeMergeFileContents = await gitClient.GetItemTextAsync(projectName, repositoryName,
+					path: commitChange.Item.Path, versionDescriptor: new GitVersionDescriptor
+					{
+						VersionType = GitVersionType.Commit,
+						Version = pullRequest.LastMergeTargetCommit.CommitId,
+					});
+				using StreamReader sr1 = new StreamReader(beforeMergeFileContents);
+
+				var differ = new InlineDiffBuilder(new Differ());
+				var diff = differ.BuildDiffModel(await sr1.ReadToEndAsync(), afterMergeContent, true);
+
+				StringBuilder diffBuilder = new();
+				diffBuilder.AppendLine("```diff");
+				diffBuilder.AppendLine("--- " + commitChange.Item.Path);
+				diffBuilder.AppendLine("+++ " + commitChange.Item.Path);
+
+				foreach (var line in diff.Lines)
+				{
+					switch (line.Type)
+					{
+						case ChangeType.Inserted:
+							diffBuilder.AppendLine("+ " + line.Text);
+							break;
+						case ChangeType.Deleted:
+							diffBuilder.AppendLine("- " + line.Text);
+							break;
+						default:
+							diffBuilder.AppendLine("  " + line.Text);
+							break;
+					}
+				}
+
+				diffBuilder.AppendLine("```");
+
+				inputs.Add(new ChangePrompt(
+					VersionControlChangeType.Edit,
+					commitChange.Item.Path,
+					diffBuilder.ToString()
+				));
+			}
+		}
+
+		return inputs;
 	}
 }
