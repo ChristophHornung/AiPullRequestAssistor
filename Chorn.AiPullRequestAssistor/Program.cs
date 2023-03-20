@@ -174,9 +174,13 @@ internal class Program
 	{
 		chatMessageBuilder.AppendLine(
 			"""
-				Act as a code reviewer review and provide constructive feedback on the following changes.
+				Act as a code reviewer and provide constructive feedback on the following changes.
 				Give a minimum of one and a maximum of five suggestions per file most relevant first.
-				Use markdown as the output if possible.
+				Use markdown as the output if possible. Output should be formatted like:
+				## [filename]
+				- [suggestion 1 text]
+				- [suggestion 2 text]
+				...
 			""");
 
 		chatMessageBuilder.AppendLine($"The following files are updates in a pull request:");
