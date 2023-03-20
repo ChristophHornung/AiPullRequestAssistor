@@ -191,7 +191,8 @@ internal class Program
 		if (model == Models.ChatGpt3_5Turbo)
 		{
 			int count = 0;
-			while (true)
+			bool success = false;
+			while (!success)
 			{
 				try
 				{
@@ -213,6 +214,7 @@ internal class Program
 						response.AppendLine(completionResult.Choices.First().Message.Content);
 						tokenCount += completionResult.Usage.TotalTokens;
 						costCent += 0.2 * completionResult.Usage.TotalTokens / 1000.0;
+						success = true;
 					}
 				}
 				catch (TaskCanceledException)
