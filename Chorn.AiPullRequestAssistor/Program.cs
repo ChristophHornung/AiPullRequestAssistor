@@ -174,7 +174,7 @@ internal class Program
 	{
 		chatMessageBuilder.AppendLine(
 			"""
-				Act as a code reviewer and provide constructive feedback on the following changes.
+				Act as a code reviewer review and provide constructive feedback on the following changes.
 				Give a minimum of one and a maximum of five suggestions per file most relevant first.
 				Use markdown as the output if possible.
 			""");
