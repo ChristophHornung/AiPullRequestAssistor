@@ -190,24 +190,40 @@ internal class Program
 		string prompt = chatMessageBuilder.Replace("\r\n", "\n").ToString();
 		if (model == Models.ChatGpt3_5Turbo)
 		{
-			ChatCompletionCreateResponse completionResult = await openAiService.ChatCompletion.CreateCompletion(
-				new ChatCompletionCreateRequest
-				{
-					Messages = new List<ChatMessage>
-					{
-						ChatMessage.FromUser(prompt)
-					},
-
-					Model = model
-				});
-			if (completionResult.Successful)
+			int count = 0;
+			while (true)
 			{
-				Console.WriteLine(completionResult.Choices.First().Message.Content);
-			}
+				try
+				{
+					ChatCompletionCreateResponse completionResult = await openAiService.ChatCompletion.CreateCompletion(
+						new ChatCompletionCreateRequest
+						{
+							Messages = new List<ChatMessage>
+							{
+								ChatMessage.FromUser(prompt)
+							},
 
-			response.AppendLine(completionResult.Choices.First().Message.Content);
-			tokenCount += completionResult.Usage.TotalTokens;
-			costCent += 0.2 * completionResult.Usage.TotalTokens / 1000.0;
+							Model = model
+						});
+
+					if (completionResult.Successful)
+					{
+						Console.WriteLine(completionResult.Choices.First().Message.Content);
+						response.AppendLine();
+						response.AppendLine(completionResult.Choices.First().Message.Content);
+						tokenCount += completionResult.Usage.TotalTokens;
+						costCent += 0.2 * completionResult.Usage.TotalTokens / 1000.0;
+					}
+				}
+				catch (TaskCanceledException)
+				{
+					count++;
+					if (count > 5)
+					{
+						throw;
+					}
+				}
+			}
 		}
 		else if (model == Models.CodeDavinciV2)
 		{
