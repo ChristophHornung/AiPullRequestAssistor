@@ -58,15 +58,16 @@ internal class Program
 
 		prIdArgument = new Argument<int>(name: "pull-request-id",
 			description: "The id of the pull request to comment on.");
+
+		addCommentCommand = new Command("add-comment", "Adds the AI comment to a pull request.");
+
+		addCommentDevopsCommand = new Command("add-comment-devops",
+			"Adds the AI comment to a pull request from a devops pipeline.");
 	}
 
 	private static async Task Main(string[] args)
 	{
 		RootCommand rootCommand = new RootCommand("Automatic AI commenter on a PR.");
-
-		addCommentCommand = new Command("add-comment", "Adds the AI comment to a pull request.");
-		addCommentDevopsCommand = new Command("add-comment-devops",
-			"Adds the AI comment to a pull request from a devops pipeline.");
 
 		addCommentCommand.AddOption(orgOption);
 		addCommentCommand.AddOption(projOption);
@@ -203,11 +204,15 @@ internal class Program
 
 	private static VssConnection GetConnection(string organizationName)
 	{
+#if NET48
 		VssClientCredentials credentials = new();
 
 		Uri devopsUrl = new Uri($"https://dev.azure.com/{organizationName}");
 		VssConnection connection = new VssConnection(devopsUrl, credentials);
 		return connection;
+#else
+		throw new InvalidOperationException("This method is only available in .NET Core.");
+#endif
 	}
 
 	private static (VssConnection connection, string projectName, string repositoryName, int prId) GetConnectionDevops()
@@ -237,7 +242,7 @@ internal class Program
 		if (string.IsNullOrEmpty(value))
 		{
 			throw new InvalidOperationException(
-				$"{variable} not found. Make sure to run this program in an Azure DevOps pipeline.");
+				$"{variable} not found. Make sure to run this program in an Azure DevOps pipeline and that the env: SYSTEM_ACCESSTOKEN is set correctly.");
 		}
 
 		return value;
@@ -335,7 +340,7 @@ internal class Program
 	{
 		List<ChangePrompt> inputs = new();
 		foreach (GitChange commitChange in commitChanges.Changes.Where(c =>
-			         !c.Item.IsFolder && c.ChangeType is VersionControlChangeType.Edit or VersionControlChangeType.Add))
+					 !c.Item.IsFolder && c.ChangeType is VersionControlChangeType.Edit or VersionControlChangeType.Add))
 		{
 			using Stream afterMergeFileContents = await gitClient.GetItemTextAsync(projectName, repositoryName,
 				path: commitChange.Item.Path, versionDescriptor: new GitVersionDescriptor
