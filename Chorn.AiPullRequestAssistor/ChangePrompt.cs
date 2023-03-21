@@ -28,8 +28,7 @@ public class ChangePrompt
 		}
 
 		chatMessageBuilder.AppendLine(this.Path);
-		chatMessageBuilder.AppendLine("```");
+
 		chatMessageBuilder.AppendLine(this.Content);
-		chatMessageBuilder.AppendLine("```");
 	}
 }

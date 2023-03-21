@@ -6,6 +6,7 @@ using DiffPlex.DiffBuilder;
 using DiffPlex.DiffBuilder.Model;
 using Microsoft.TeamFoundation.SourceControl.WebApi;
 using Microsoft.VisualStudio.Services.Client;
+using Microsoft.VisualStudio.Services.Common;
 using Microsoft.VisualStudio.Services.WebApi;
 using OpenAI.GPT3;
 using OpenAI.GPT3.Managers;
@@ -26,6 +27,8 @@ internal class Program
 	private static readonly Option<string> openAiTokenOption;
 
 	private static readonly Argument<int> prIdArgument;
+	private static Command addCommentCommand;
+	private static Command addCommentDevopsCommand;
 
 	static Program()
 	{
@@ -61,29 +64,53 @@ internal class Program
 	{
 		RootCommand rootCommand = new RootCommand("Automatic AI commenter on a PR.");
 
-		rootCommand.AddOption(orgOption);
-		rootCommand.AddOption(projOption);
-		rootCommand.AddOption(repoOption);
-		rootCommand.AddOption(openAiTokenOption);
-		rootCommand.AddArgument(prIdArgument);
+		addCommentCommand = new Command("add-comment", "Adds the AI comment to a pull request.");
+		addCommentDevopsCommand = new Command("add-comment-devops",
+			"Adds the AI comment to a pull request from a devops pipeline.");
 
-		rootCommand.SetHandler(AddAiComment);
+		addCommentCommand.AddOption(orgOption);
+		addCommentCommand.AddOption(projOption);
+		addCommentCommand.AddOption(repoOption);
+		addCommentCommand.AddOption(openAiTokenOption);
+		addCommentCommand.AddArgument(prIdArgument);
+
+		addCommentDevopsCommand.AddOption(openAiTokenOption);
+
+		rootCommand.AddCommand(addCommentCommand);
+		rootCommand.AddCommand(addCommentDevopsCommand);
+
+		addCommentCommand.SetHandler(AddAiComment);
+		addCommentDevopsCommand.SetHandler(AddAiComment);
 		await rootCommand.InvokeAsync(args);
 	}
 
 	private static async Task AddAiComment(InvocationContext arg)
 	{
-		string organizationName = arg.ParseResult.GetValueForOption(orgOption)!;
-		string projectName = arg.ParseResult.GetValueForOption(projOption)!;
-		string repositoryName = arg.ParseResult.GetValueForOption(repoOption)!;
+		string projectName;
+		string repositoryName;
 		string openAiToken = arg.ParseResult.GetValueForOption(openAiTokenOption)!;
-		int pullRequestId = arg.ParseResult.GetValueForArgument(prIdArgument);
+		int pullRequestId;
 
-		VssClientCredentials credentials = new();
+		VssConnection connection;
+		if (arg.ParseResult.CommandResult.Command == addCommentCommand)
+		{
+			string organizationName = arg.ParseResult.GetValueForOption(orgOption)!;
+			projectName = arg.ParseResult.GetValueForOption(projOption)!;
+			repositoryName = arg.ParseResult.GetValueForOption(repoOption)!;
+			pullRequestId = arg.ParseResult.GetValueForArgument(prIdArgument);
 
-		Uri devopsUrl = new Uri($"https://dev.azure.com/{organizationName}");
-		VssConnection connection = new VssConnection(devopsUrl, credentials);
+			connection = GetConnection(organizationName);
+		}
+		else if (arg.ParseResult.CommandResult.Command == addCommentDevopsCommand)
+		{
+			(connection, projectName, repositoryName, pullRequestId) = GetConnectionDevops();
+		}
+		else
+		{
+			throw new Exception("Invalid command.");
+		}
 
+		Console.WriteLine("Retrieving PR details.");
 		// Get the pull request details
 		GitHttpClient gitClient = connection.GetClient<GitHttpClient>();
 		GitPullRequest pullRequest =
@@ -91,6 +118,8 @@ internal class Program
 				includeCommits: true);
 
 		GitCommitRef pullRequestCommit = pullRequest.LastMergeCommit;
+
+		Console.WriteLine("Retrieving commit details.");
 		GitCommit commit = await gitClient.GetCommitAsync(projectName, pullRequestCommit.CommitId, repositoryName);
 		GitCommitChanges commitChanges =
 			await gitClient.GetChangesAsync(projectName, commit.CommitId, repositoryName);
@@ -117,6 +146,7 @@ internal class Program
 
 		bool initial = true;
 
+		Console.WriteLine("Requesting AI comments.");
 		foreach (var input in changeInputs.Where(c => c.Content.Length / 4 < maxToken))
 		{
 			if ((input.Content.Length + chatMessageBuilder.Length) / 4 > maxToken)
@@ -132,6 +162,7 @@ internal class Program
 
 		(tokenCount, costCent) = await AskAi(chatMessageBuilder, model, openAiService, response, tokenCount, costCent);
 
+		Console.WriteLine("Requesting AI comments.");
 		StringBuilder commentBuilder = new();
 		commentBuilder.AppendLine($"## AI Suggestions ({model} - {tokenCount} token {costCent:F1} cent)");
 		commentBuilder.AppendLine(response.ToString());
@@ -168,6 +199,48 @@ internal class Program
 			await gitClient.CreateThreadAsync(commentThread, projectName, repositoryId: repositoryName,
 				pullRequestId: pullRequestId);
 		}
+	}
+
+	private static VssConnection GetConnection(string organizationName)
+	{
+		VssClientCredentials credentials = new();
+
+		Uri devopsUrl = new Uri($"https://dev.azure.com/{organizationName}");
+		VssConnection connection = new VssConnection(devopsUrl, credentials);
+		return connection;
+	}
+
+	private static (VssConnection connection, string projectName, string repositoryName, int prId) GetConnectionDevops()
+	{
+		string accessToken = GetEnvironmentVariable("SYSTEM_ACCESSTOKEN");
+		string repositoryName = GetEnvironmentVariable("BUILD_REPOSITORY_NAME");
+		string projectName = GetEnvironmentVariable("SYSTEM_TEAMPROJECT");
+		string collectionUri = GetEnvironmentVariable("SYSTEM_TEAMFOUNDATIONCOLLECTIONURI");
+		int prId = int.Parse(GetEnvironmentVariable("System_PullRequest_PullRequestId"));
+
+		Console.WriteLine(repositoryName);
+		Console.WriteLine(projectName);
+		Console.WriteLine(collectionUri);
+		Console.WriteLine(prId);
+
+		VssClientCredentials credentials = new VssBasicCredential(string.Empty, accessToken);
+
+		Uri devopsUrl = new Uri(collectionUri);
+		VssConnection connection = new VssConnection(devopsUrl, new VssClientCredentials());
+		return (connection, projectName, repositoryName, prId);
+	}
+
+	private static string GetEnvironmentVariable(string variable)
+	{
+		string? value = Environment.GetEnvironmentVariable(variable);
+
+		if (string.IsNullOrEmpty(value))
+		{
+			throw new InvalidOperationException(
+				$"{variable} not found. Make sure to run this program in an Azure DevOps pipeline.");
+		}
+
+		return value;
 	}
 
 	private static void BuildInitialInstruction(StringBuilder chatMessageBuilder)
@@ -277,7 +350,7 @@ internal class Program
 			if (commitChange.ChangeType == VersionControlChangeType.Add)
 			{
 				StringBuilder addBuilder = new();
-				addBuilder.AppendLine("```diff");
+				addBuilder.AppendLine("```");
 				addBuilder.AppendLine(afterMergeContent);
 				addBuilder.AppendLine("```");
 				inputs.Add(new ChangePrompt(VersionControlChangeType.Add,
