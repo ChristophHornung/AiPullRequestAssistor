@@ -226,7 +226,7 @@ internal class Program
 		VssClientCredentials credentials = new VssBasicCredential(string.Empty, accessToken);
 
 		Uri devopsUrl = new Uri(collectionUri);
-		VssConnection connection = new VssConnection(devopsUrl, new VssClientCredentials());
+		VssConnection connection = new VssConnection(devopsUrl, credentials);
 		return (connection, projectName, repositoryName, prId);
 	}
 
