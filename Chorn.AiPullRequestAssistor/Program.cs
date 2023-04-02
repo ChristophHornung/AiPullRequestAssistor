@@ -27,7 +27,9 @@ internal class Program
 	private static readonly Option<string> openAiTokenOption;
 
 	private static readonly Argument<int> prIdArgument;
+
 	private static Command addCommentCommand;
+
 	private static Command addCommentDevopsCommand;
 
 	static Program()
