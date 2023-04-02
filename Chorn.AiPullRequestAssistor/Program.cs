@@ -219,7 +219,7 @@ internal class Program
 		string repositoryName = GetEnvironmentVariable("BUILD_REPOSITORY_NAME");
 		string projectName = GetEnvironmentVariable("SYSTEM_TEAMPROJECT");
 		string collectionUri = GetEnvironmentVariable("SYSTEM_TEAMFOUNDATIONCOLLECTIONURI");
-		int prId = int.Parse(GetEnvironmentVariable("System_PullRequest_PullRequestId"));
+		int prId = int.Parse(GetEnvironmentVariable("SYSTEM_PULLREQUEST_PULLREQUESTID"));
 
 		Console.WriteLine(repositoryName);
 		Console.WriteLine(projectName);
