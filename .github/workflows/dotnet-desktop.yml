@@ -33,5 +33,5 @@ jobs:
     - name: Upload Build Artifact linux
       uses: actions/upload-artifact@v3
       with:
-        name: AiPullRequestAssistor-net7-linux64
+        name: AiPullRequestAssistor-net7-linuxx64
         path: Release/linux-x64
