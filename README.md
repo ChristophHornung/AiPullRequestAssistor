@@ -41,17 +41,13 @@ On linux:
       targetType: 'inline'
       script: |
         $url = 'https://github.com/ChristophHornung/AiPullRequestAssistor/releases/download/v0.0.1/AiPullRequestAssistor-net7-linuxx64.zip'
-        Write-Host "Downloading..."
         $extractPath = "$(Pipeline.Workspace)/AiPullRequestAssistor"
         $zipPath = "$extractPath/AiPullRequestAssistor.zip"
         New-Item -ItemType Directory -Force -Path $extractPath
         Invoke-WebRequest -Uri $url -OutFile $zipPath
-        Write-Host "Downloaded"
         Expand-Archive -Path $zipPath -DestinationPath $extractPath
-        Write-Host "Extracted"
         $executablePath = Join-Path -Path $extractPath -ChildPath 'AiPullRequestAssistor'
         $arguments = 'add-comment-devops', '-t', "${env:OPENAIAPIKEY}"
-        Write-Host "Executing"
         & chmod +x $executablePath
         Start-Process -FilePath $executablePath -ArgumentList $arguments -NoNewWindow -Wait
     condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'))
