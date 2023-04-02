@@ -18,7 +18,7 @@ jobs:
       with:
         dotnet-version: 7.0.x
     - name: Install dependencies
-      run: dotnet restore --framework net7 Chorn.AiPullRequestAssistor\Chorn.AiPullRequestAssistor.csproj
+      run: dotnet restore Chorn.AiPullRequestAssistor\Chorn.AiPullRequestAssistor.csproj
     - name: Build
       run: dotnet build --framework net7 --configuration Release --no-restore Chorn.AiPullRequestAssistor\Chorn.AiPullRequestAssistor.csproj
     - name: Package

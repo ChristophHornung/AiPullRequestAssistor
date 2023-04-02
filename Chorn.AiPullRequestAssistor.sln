@@ -7,7 +7,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Chorn.AiPullRequestAssistor
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{CFDDD8F0-DD5E-43EE-B747-781608118B11}"
 	ProjectSection(SolutionItems) = preProject
-		AiPullRequestAssistorTask\task.json = AiPullRequestAssistorTask\task.json
+		.github\workflows\dotnet-desktop.yml = .github\workflows\dotnet-desktop.yml
 	EndProjectSection
 EndProject
 Global
