@@ -145,8 +145,6 @@ internal class Program
 
 		StringBuilder response = new();
 
-		bool initial = true;
-
 		Console.WriteLine("Requesting AI comments.");
 		foreach (var input in changeInputs.Where(c => c.Content.Length / 4 < maxToken))
 		{
