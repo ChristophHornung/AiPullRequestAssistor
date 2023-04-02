@@ -20,11 +20,13 @@ jobs:
     - name: Install dependencies
       run: dotnet restore Chorn.AiPullRequestAssistor\Chorn.AiPullRequestAssistor.csproj
     - name: Build windows
-      run: dotnet build --framework net7.0 --configuration Release --no-restore Chorn.AiPullRequestAssistor\Chorn.AiPullRequestAssistor.csproj
+      run: dotnet build --framework net7.0 --configuration Release --no-restore --runtime win-x64 Chorn.AiPullRequestAssistor\Chorn.AiPullRequestAssistor.csproj
     - name: Package windows
-      run: dotnet publish --framework net7.0 --no-restore --no-build --configuration Release --verbosity normal -o Release/win-x64 Chorn.AiPullRequestAssistor\Chorn.AiPullRequestAssistor.csproj
+      run: dotnet publish --framework net7.0 --no-restore --no-build --configuration Release --runtime win-x64 --verbosity normal -o Release/win-x64 Chorn.AiPullRequestAssistor\Chorn.AiPullRequestAssistor.csproj
+    - name: Build linux
+      run: dotnet build --framework net7.0 --configuration Release --no-restore --runtime linux-x64 Chorn.AiPullRequestAssistor\Chorn.AiPullRequestAssistor.csproj
     - name: Package linux
-      run: dotnet publish --framework net7.0 --no-restore --no-build --configuration Release --verbosity normal -o Release/linux-x64 Chorn.AiPullRequestAssistor\Chorn.AiPullRequestAssistor.csproj
+      run: dotnet publish --framework net7.0 --no-restore --no-build --configuration Release --runtime linux-x64 --verbosity normal -o Release/linux-x64 Chorn.AiPullRequestAssistor\Chorn.AiPullRequestAssistor.csproj
     - name: Upload Build Artifact windows
       uses: actions/upload-artifact@v3
       with:
