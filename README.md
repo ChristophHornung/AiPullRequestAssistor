@@ -5,7 +5,10 @@ an AI endpoint for code review and appends the comment to the PR.
 ## Usage
 ### Azure Devops Pipeline
 Inside the pipline add a powershell taks to download and execute the assistor.
-Add a secret to the pipline called 'OpenAiApiKey' with the api key to the openAi API.
+
+Prerequisites:
+- Add a secret to the pipline called 'OpenAiApiKey' with the api key to the openAi API.
+- The project collection build service for the pipeline needs the permission to comment on PRs.
 
 On windows:
 ```yaml
