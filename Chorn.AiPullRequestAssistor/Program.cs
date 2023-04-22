@@ -26,6 +26,10 @@ internal class Program
 
 	private static readonly Option<string> openAiTokenOption;
 
+	private static readonly Option<Models.Model> openAiModelOption;
+
+	private static readonly Option<int> maxTotalTokenOption;
+	
 	private static readonly Argument<int> prIdArgument;
 
 	private static Command addCommentCommand;
@@ -58,6 +62,18 @@ internal class Program
 		openAiTokenOption.IsRequired = true;
 		openAiTokenOption.AddAlias("-t");
 
+		maxTotalTokenOption = new Option<int>(
+			name: "--maxTotalToken",
+			description: "The maximum total token count to user for one PR comment. If the PR is larger than this value no AI request will be done.");
+
+		openAiModelOption = new Option<Models.Model>(name: "--model",
+			description: "The model to use for the AI request.");
+
+		openAiModelOption.AddAlias("-m");
+		openAiModelOption.FromAmong(Models.Model.ChatGpt3_5Turbo.ToString(), Models.Model.Gpt_4.ToString(),
+			Models.Model.Gpt_4_32k.ToString());
+		openAiModelOption.SetDefaultValue(Models.Model.ChatGpt3_5Turbo);
+
 		prIdArgument = new Argument<int>(name: "pull-request-id",
 			description: "The id of the pull request to comment on.");
 
@@ -75,13 +91,17 @@ internal class Program
 		addCommentCommand.AddOption(projOption);
 		addCommentCommand.AddOption(repoOption);
 		addCommentCommand.AddOption(openAiTokenOption);
+		addCommentCommand.AddOption(openAiModelOption);
+		addCommentCommand.AddOption(maxTotalTokenOption);
 		addCommentCommand.AddArgument(prIdArgument);
 
 		addCommentDevopsCommand.AddOption(openAiTokenOption);
+		addCommentDevopsCommand.AddOption(openAiModelOption);
+		addCommentDevopsCommand.AddOption(maxTotalTokenOption);
 
 		rootCommand.AddCommand(addCommentCommand);
 		rootCommand.AddCommand(addCommentDevopsCommand);
-
+		
 		addCommentCommand.SetHandler(AddAiComment);
 		addCommentDevopsCommand.SetHandler(AddAiComment);
 		await rootCommand.InvokeAsync(args);
@@ -136,21 +156,28 @@ internal class Program
 			ApiKey = openAiToken
 		});
 
-		string model = Models.ChatGpt3_5Turbo;
+		Models.Model model = arg.ParseResult.GetValueForOption(openAiModelOption);
 		StringBuilder chatMessageBuilder = new();
 
 		BuildInitialInstruction(chatMessageBuilder);
 
-		int maxToken = 3500;
+		int maxSingleRequestTokenCount = model is Models.Model.ChatGpt3_5Turbo or Models.Model.Gpt_4 ? 3_500 : 30_000;
+		int maxTotalRequestTokenCount = arg.ParseResult.GetValueForOption(maxTotalTokenOption);
+		if (maxTotalRequestTokenCount > 0 && changeInputs.Sum(i => i.Content.Length) > maxTotalRequestTokenCount * 4)
+		{
+			Console.WriteLine("PR is too large to comment on.");
+			return;
+		}
+
 		int tokenCount = 0;
 		double costCent = 0;
 
 		StringBuilder response = new();
 
 		Console.WriteLine("Requesting AI comments.");
-		foreach (var input in changeInputs.Where(c => c.Content.Length / 4 < maxToken))
+		foreach (ChangePrompt input in changeInputs.Where(c => c.Content.Length / 4 < maxSingleRequestTokenCount))
 		{
-			if ((input.Content.Length + chatMessageBuilder.Length) / 4 > maxToken)
+			if ((input.Content.Length + chatMessageBuilder.Length) / 4 > maxSingleRequestTokenCount)
 			{
 				(tokenCount, costCent) =
 					await AskAi(chatMessageBuilder, model, openAiService, response, tokenCount, costCent);
@@ -211,7 +238,7 @@ internal class Program
 		VssConnection connection = new VssConnection(devopsUrl, credentials);
 		return connection;
 #else
-		throw new InvalidOperationException("This method is only available in .NET Core.");
+		throw new InvalidOperationException("This method is only available in .NET 4.8.");
 #endif
 	}
 
@@ -264,13 +291,13 @@ internal class Program
 		chatMessageBuilder.AppendLine($"The following files are updates in a pull request:");
 	}
 
-	private static async Task<(int tokenCount, double costCent)> AskAi(StringBuilder chatMessageBuilder, string model,
+	private static async Task<(int tokenCount, double costCent)> AskAi(StringBuilder chatMessageBuilder, Models.Model model,
 		OpenAIService openAiService,
 		StringBuilder response, int tokenCount, double costCent)
 	{
 		// Max size reached, we ask ChatGTP
 		string prompt = chatMessageBuilder.Replace("\r\n", "\n").ToString();
-		if (model == Models.ChatGpt3_5Turbo)
+		if (model is Models.Model.ChatGpt3_5Turbo or Models.Model.Gpt_4 or Models.Model.Gpt_4_32k)
 		{
 			int count = 0;
 			bool success = false;
@@ -286,7 +313,7 @@ internal class Program
 								ChatMessage.FromUser(prompt)
 							},
 
-							Model = model
+							Model = model.EnumToString()
 						});
 
 					if (completionResult.Successful)
@@ -309,23 +336,6 @@ internal class Program
 				}
 			}
 		}
-		else if (model == Models.CodeDavinciV2)
-		{
-			var completionResult = await openAiService.CreateCompletion(new CompletionCreateRequest()
-			{
-				Model = model,
-				Prompt = prompt
-			});
-
-			if (completionResult.Successful)
-			{
-				Console.WriteLine(completionResult.Choices.First().Text);
-			}
-
-			response.AppendLine(completionResult.Choices.First().Text);
-			tokenCount += completionResult.Usage.TotalTokens;
-			costCent += 0.2 * completionResult.Usage.TotalTokens / 1000.0;
-		}
 		else
 		{
 			throw new Exception("Invalid model");
@@ -340,7 +350,7 @@ internal class Program
 	{
 		List<ChangePrompt> inputs = new();
 		foreach (GitChange commitChange in commitChanges.Changes.Where(c =>
-					 !c.Item.IsFolder && c.ChangeType is VersionControlChangeType.Edit or VersionControlChangeType.Add))
+			         !c.Item.IsFolder && c.ChangeType is VersionControlChangeType.Edit or VersionControlChangeType.Add))
 		{
 			using Stream afterMergeFileContents = await gitClient.GetItemTextAsync(projectName, repositoryName,
 				path: commitChange.Item.Path, versionDescriptor: new GitVersionDescriptor
