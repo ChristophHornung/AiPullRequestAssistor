@@ -288,7 +288,7 @@ internal class Program
 				...
 			""");
 
-		chatMessageBuilder.AppendLine($"The following files are updates in a pull request:");
+		chatMessageBuilder.AppendLine($"The following files are updates in the pull request and are in unidiff format:");
 	}
 
 	private static async Task<(int tokenCount, double costCent)> AskAi(StringBuilder chatMessageBuilder, Models.Model model,
@@ -362,6 +362,12 @@ internal class Program
 			using StreamReader sr = new StreamReader(afterMergeFileContents);
 			string afterMergeContent = await sr.ReadToEndAsync();
 
+			if (afterMergeContent.Contains('\0'))
+			{
+				// We assume the file is binary and skip it.
+				continue;
+			}
+
 			if (commitChange.ChangeType == VersionControlChangeType.Add)
 			{
 				StringBuilder addBuilder = new();
@@ -381,6 +387,7 @@ internal class Program
 						VersionType = GitVersionType.Commit,
 						Version = pullRequest.LastMergeTargetCommit.CommitId,
 					});
+
 				using StreamReader sr1 = new StreamReader(beforeMergeFileContents);
 
 				var differ = new InlineDiffBuilder(new Differ());
@@ -391,7 +398,7 @@ internal class Program
 				diffBuilder.AppendLine("--- " + commitChange.Item.Path);
 				diffBuilder.AppendLine("+++ " + commitChange.Item.Path);
 
-				foreach (var line in diff.Lines)
+				foreach (DiffPiece? line in diff.Lines)
 				{
 					switch (line.Type)
 					{
