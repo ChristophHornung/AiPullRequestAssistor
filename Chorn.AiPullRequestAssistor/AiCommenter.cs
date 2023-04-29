@@ -207,8 +207,25 @@ internal class AiCommenter
 	{
 		// Max size reached, we ask ChatGTP
 		string prompt = chatMessageBuilder.Replace("\r\n", "\n").ToString();
+		
 		if (model is Models.Model.ChatGpt3_5Turbo or Models.Model.Gpt_4 or Models.Model.Gpt_4_32k)
 		{
+			double tokenPromptCostInCent = model switch
+			{
+				Models.Model.ChatGpt3_5Turbo => 0.2,
+				Models.Model.Gpt_4 => 3,
+				Models.Model.Gpt_4_32k => 6,
+				_ => throw new ArgumentOutOfRangeException(nameof(model), model, null)
+			};
+
+			double tokenCompletionCostInCent = model switch
+			{
+				Models.Model.ChatGpt3_5Turbo => 0.2,
+				Models.Model.Gpt_4 => 6,
+				Models.Model.Gpt_4_32k => 12,
+				_ => throw new ArgumentOutOfRangeException(nameof(model), model, null)
+			};
+
 			int count = 0;
 			bool success = false;
 			while (!success)
@@ -232,7 +249,9 @@ internal class AiCommenter
 						response.AppendLine();
 						response.AppendLine(completionResult.Choices.First().Message.Content);
 						tokenCount += completionResult.Usage.TotalTokens;
-						costCent += 0.2 * completionResult.Usage.TotalTokens / 1000.0;
+						costCent += tokenPromptCostInCent * completionResult.Usage.PromptTokens / 1000.0;
+						costCent += tokenCompletionCostInCent * (completionResult.Usage.CompletionTokens ?? 0) / 1000.0;
+
 						success = true;
 					}
 				}
