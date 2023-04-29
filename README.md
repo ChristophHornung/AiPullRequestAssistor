@@ -20,7 +20,7 @@ On windows:
     inputs:
       targetType: 'inline'
       script: |
-        $url = 'https://github.com/ChristophHornung/AiPullRequestAssistor/releases/download/v0.0.1/AiPullRequestAssistor-net7-winx64.zip'
+        $url = 'https://github.com/ChristophHornung/AiPullRequestAssistor/releases/download/v0.0.2/AiPullRequestAssistor-net7-winx64.zip'
         $extractPath = "$(Pipeline.Workspace)/AiPullRequestAssistor"
         $zipPath = "$extractPath/AiPullRequestAssistor.zip"
         New-Item -ItemType Directory -Force -Path $extractPath
@@ -43,7 +43,7 @@ On linux:
     inputs:
       targetType: 'inline'
       script: |
-        $url = 'https://github.com/ChristophHornung/AiPullRequestAssistor/releases/download/v0.0.1/AiPullRequestAssistor-net7-linuxx64.zip'
+        $url = 'https://github.com/ChristophHornung/AiPullRequestAssistor/releases/download/v0.0.2/AiPullRequestAssistor-net7-linuxx64.zip'
         $extractPath = "$(Pipeline.Workspace)/AiPullRequestAssistor"
         $zipPath = "$extractPath/AiPullRequestAssistor.zip"
         New-Item -ItemType Directory -Force -Path $extractPath
