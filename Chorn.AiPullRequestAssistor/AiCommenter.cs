@@ -82,7 +82,7 @@ internal class AiCommenter
 			{
 				(tokenCount, costCent) =
 					await AskAi(chatMessageBuilder, model, openAiService, response, tokenCount, costCent);
-				if (tokenCount >= maxTotalRequestTokenCount)
+				if (maxTotalRequestTokenCount > 0 && tokenCount >= maxTotalRequestTokenCount)
 				{
 					// We already expended all tokens, we can't ask anymore.
 					allTokensSpend = true;

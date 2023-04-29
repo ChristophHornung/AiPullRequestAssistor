@@ -33,13 +33,17 @@ internal static class AiAssistorCommands
 
 		InitialPromptOption = new Option<string>(
 			name: "--initialPrompt",
-			description: "The initial prompt to start the AI conversation with, the initial prompt is followed by all file changes in unidiff format. Uses a default prompt otherwise.");
+			description:
+			"The initial prompt to start the AI conversation with, the initial prompt is followed by all file changes in unidiff format. Uses a default prompt otherwise.");
 		InitialPromptOption.IsRequired = false;
 
 		MaxTotalTokenOption = new Option<int>(
 			name: "--maxTotalToken",
 			description:
-			"The maximum total token count to user for one PR comment. If the PR is larger than this value no AI request will be done.");
+			"The maximum total token count to use for one PR comment. " +
+			"Once the limit is reached no additional requests are made for one PR - this means the total token count can be slightly larger than this value." +
+			"Set to 0 to allow arbitrarily large requests - BEWARE though this might incur a very high cost for very large PRs.");
+		MaxTotalTokenOption.SetDefaultValue(100_000);
 
 		OpenAiModelOption = new Option<Models.Model>(name: "--model",
 			description: "The model to use for the AI request.");
