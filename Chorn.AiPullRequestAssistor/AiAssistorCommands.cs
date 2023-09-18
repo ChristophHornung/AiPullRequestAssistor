@@ -40,14 +40,15 @@ internal static class AiAssistorCommands
 		AzureSettingsOption = new Option<string>(
 			name: "--azure",
 			description:
-			"Uses the azure endpoints instead of the OpenAI api. Requires a connection string in the form of <deploymentId>.<resourceName>");
+			"Uses the azure endpoints instead of the OpenAI api. Requires a connection string in the form of <resourceName>.<deploymentId>");
 		AzureSettingsOption.IsRequired = false;
 
 		MaxTotalTokenOption = new Option<int>(
 			name: "--maxTotalToken",
 			description:
 			"The maximum total token count to use for one PR comment. " +
-			"Once the limit is reached no additional requests are made for one PR - this means the total token count can be slightly larger than this value." +
+			"Once the limit is reached no additional requests are made for one PR - this means the total token count can be slightly larger than this value. " +
+			"If the limit is reached by just counting the input no request will be made. "+
 			"Set to 0 to allow arbitrarily large requests - BEWARE though this might incur a very high cost for very large PRs.");
 		MaxTotalTokenOption.SetDefaultValue(100_000);
 
