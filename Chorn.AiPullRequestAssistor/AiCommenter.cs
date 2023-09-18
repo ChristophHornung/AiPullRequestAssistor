@@ -5,11 +5,11 @@ using DiffPlex.DiffBuilder;
 using DiffPlex.DiffBuilder.Model;
 using Microsoft.TeamFoundation.SourceControl.WebApi;
 using Microsoft.VisualStudio.Services.WebApi;
-using OpenAI.GPT3;
-using OpenAI.GPT3.Managers;
-using OpenAI.GPT3.ObjectModels;
-using OpenAI.GPT3.ObjectModels.RequestModels;
-using OpenAI.GPT3.ObjectModels.ResponseModels;
+using OpenAI;
+using OpenAI.Managers;
+using OpenAI.ObjectModels;
+using OpenAI.ObjectModels.RequestModels;
+using OpenAI.ObjectModels.ResponseModels;
 
 namespace Chorn.AiPullRequestAssistor;
 
@@ -51,21 +51,34 @@ internal class AiCommenter
 		List<ChangePrompt> changeInputs =
 			await GetChangeInputs(gitClient, projectName, repositoryName, pullRequestId, cancellationToken);
 
-		var openAiService = new OpenAIService(new OpenAiOptions()
+		OpenAiOptions options = new()
 		{
-			ApiKey = openAiToken
-		});
+			ApiKey = openAiToken,
+		};
+
+		string? azureConnection = arg.ParseResult.GetValueForOption(AiAssistorCommands.AzureSettingsOption);
+		if (azureConnection!=null)
+		{
+			string[] parts = azureConnection.Split('.');
+			options.ProviderType = ProviderType.Azure;
+			options.ResourceName = parts[0];
+			options.DeploymentId = parts[1];
+		}
+
+		var openAiService = new OpenAIService(options);
+
 
 		Models.Model model = arg.ParseResult.GetValueForOption(AiAssistorCommands.OpenAiModelOption);
 		StringBuilder chatMessageBuilder = new();
 
 		BuildInitialInstruction(chatMessageBuilder, initialPrompt);
 
-		int maxSingleRequestTokenCount = model is Models.Model.ChatGpt3_5Turbo or Models.Model.Gpt_4 ? 3_500 : 30_000;
+		int maxSingleRequestTokenCount = model is Models.Model.Gpt_3_5_Turbo or Models.Model.Gpt_4 ? 3_500 : 30_000;
 		int maxTotalRequestTokenCount = arg.ParseResult.GetValueForOption(AiAssistorCommands.MaxTotalTokenOption);
-		if (maxTotalRequestTokenCount > 0 && changeInputs.Sum(i => i.Content.Length) > maxTotalRequestTokenCount * 4)
+		int estimatedTokens = changeInputs.Sum(i => i.Content.Length) / 4;
+		if (maxTotalRequestTokenCount > 0 && estimatedTokens > maxTotalRequestTokenCount)
 		{
-			Console.WriteLine("PR is too large to comment on.");
+			Console.WriteLine($"PR is too large to comment on (estimated {estimatedTokens}, limit is {maxTotalRequestTokenCount}).");
 			return;
 		}
 
@@ -208,11 +221,11 @@ internal class AiCommenter
 		// Max size reached, we ask ChatGTP
 		string prompt = chatMessageBuilder.Replace("\r\n", "\n").ToString();
 		
-		if (model is Models.Model.ChatGpt3_5Turbo or Models.Model.Gpt_4 or Models.Model.Gpt_4_32k)
+		if (model is Models.Model.Gpt_3_5_Turbo or Models.Model.Gpt_4 or Models.Model.Gpt_4_32k)
 		{
 			double tokenPromptCostInCent = model switch
 			{
-				Models.Model.ChatGpt3_5Turbo => 0.2,
+				Models.Model.Gpt_3_5_Turbo => 0.2,
 				Models.Model.Gpt_4 => 3,
 				Models.Model.Gpt_4_32k => 6,
 				_ => throw new ArgumentOutOfRangeException(nameof(model), model, null)
@@ -220,7 +233,7 @@ internal class AiCommenter
 
 			double tokenCompletionCostInCent = model switch
 			{
-				Models.Model.ChatGpt3_5Turbo => 0.2,
+				Models.Model.Gpt_3_5_Turbo => 0.2,
 				Models.Model.Gpt_4 => 6,
 				Models.Model.Gpt_4_32k => 12,
 				_ => throw new ArgumentOutOfRangeException(nameof(model), model, null)

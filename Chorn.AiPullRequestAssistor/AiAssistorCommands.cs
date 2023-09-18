@@ -1,5 +1,5 @@
 ﻿using System.CommandLine;
-using OpenAI.GPT3.ObjectModels;
+using OpenAI.ObjectModels;
 
 namespace Chorn.AiPullRequestAssistor;
 
@@ -37,6 +37,12 @@ internal static class AiAssistorCommands
 			"The initial prompt to start the AI conversation with, the initial prompt is followed by all file changes in unidiff format. Uses a default prompt otherwise.");
 		InitialPromptOption.IsRequired = false;
 
+		AzureSettingsOption = new Option<string>(
+			name: "--azure",
+			description:
+			"Uses the azure endpoints instead of the OpenAI api. Requires a connection string in the form of <deploymentId>.<resourceName>");
+		AzureSettingsOption.IsRequired = false;
+
 		MaxTotalTokenOption = new Option<int>(
 			name: "--maxTotalToken",
 			description:
@@ -49,9 +55,9 @@ internal static class AiAssistorCommands
 			description: "The model to use for the AI request.");
 
 		OpenAiModelOption.AddAlias("-m");
-		OpenAiModelOption.FromAmong(Models.Model.ChatGpt3_5Turbo.ToString(), Models.Model.Gpt_4.ToString(),
+		OpenAiModelOption.FromAmong(Models.Model.Gpt_3_5_Turbo.ToString(), Models.Model.Gpt_4.ToString(),
 			Models.Model.Gpt_4_32k.ToString());
-		OpenAiModelOption.SetDefaultValue(Models.Model.ChatGpt3_5Turbo);
+		OpenAiModelOption.SetDefaultValue(Models.Model.Gpt_3_5_Turbo);
 
 		PrIdArgument = new Argument<int>(name: "pull-request-id",
 			description: "The id of the pull request to comment on.");
@@ -69,6 +75,7 @@ internal static class AiAssistorCommands
 		AddCommentCommand.AddOption(OpenAiTokenOption);
 		AddCommentCommand.AddOption(OpenAiModelOption);
 		AddCommentCommand.AddOption(MaxTotalTokenOption);
+		AddCommentCommand.AddOption(AzureSettingsOption);
 		AddCommentCommand.AddOption(InitialPromptOption);
 		AddCommentCommand.AddArgument(PrIdArgument);
 
@@ -76,6 +83,7 @@ internal static class AiAssistorCommands
 		AddCommentDevOpsCommand.AddOption(OpenAiModelOption);
 		AddCommentDevOpsCommand.AddOption(MaxTotalTokenOption);
 		AddCommentDevOpsCommand.AddOption(InitialPromptOption);
+		AddCommentDevOpsCommand.AddOption(AzureSettingsOption);
 
 		RootCommand.AddCommand(AddCommentCommand);
 		RootCommand.AddCommand(AddCommentDevOpsCommand);
@@ -88,6 +96,7 @@ internal static class AiAssistorCommands
 	public static Option<string> ProjOption { get; }
 	public static Option<string> RepoOption { get; }
 	public static Option<string> OpenAiTokenOption { get; }
+	public static Option<string> AzureSettingsOption { get; }
 	public static Option<string> InitialPromptOption { get; }
 	public static Option<Models.Model> OpenAiModelOption { get; }
 	public static Option<int> MaxTotalTokenOption { get; }
