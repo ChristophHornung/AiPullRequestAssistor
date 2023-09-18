@@ -57,7 +57,7 @@ internal class AiCommenter
 		};
 
 		string? azureConnection = arg.ParseResult.GetValueForOption(AiAssistorCommands.AzureSettingsOption);
-		if (azureConnection!=null)
+		if (azureConnection != null)
 		{
 			string[] parts = azureConnection.Split('.');
 			options.ProviderType = ProviderType.Azure;
@@ -73,12 +73,20 @@ internal class AiCommenter
 
 		BuildInitialInstruction(chatMessageBuilder, initialPrompt);
 
-		int maxSingleRequestTokenCount = model is Models.Model.Gpt_3_5_Turbo or Models.Model.Gpt_4 ? 3_500 : 30_000;
+		int maxSingleRequestTokenCount = model switch
+		{
+			Models.Model.Gpt_3_5_Turbo => 3_500,
+			Models.Model.Gpt_3_5_Turbo_16k => 15_500,
+			Models.Model.Gpt_4 => 7_500,
+			Models.Model.Gpt_4_32k => 31_500,
+			_ => 30_000
+		};
 		int maxTotalRequestTokenCount = arg.ParseResult.GetValueForOption(AiAssistorCommands.MaxTotalTokenOption);
 		int estimatedTokens = changeInputs.Sum(i => i.Content.Length) / 4;
 		if (maxTotalRequestTokenCount > 0 && estimatedTokens > maxTotalRequestTokenCount)
 		{
-			Console.WriteLine($"PR is too large to comment on (estimated {estimatedTokens}, limit is {maxTotalRequestTokenCount}).");
+			Console.WriteLine(
+				$"PR is too large to comment on (estimated {estimatedTokens}, limit is {maxTotalRequestTokenCount}).");
 			return;
 		}
 
@@ -197,15 +205,15 @@ internal class AiCommenter
 		{
 			chatMessageBuilder.AppendLine(
 				"""
-				Act as a code reviewer and provide constructive feedback on the following changes.
-				Give a minimum of one and a maximum of five suggestions per file most relevant first.
-				Use markdown as the output if possible. Output should be formatted like:
-				## [filename]
-				- [suggestion 1 text]
-				- [suggestion 2 text]
-				...
-				Don't mention line numbers and don't be too nit-picky.
-			""");
+					Act as a code reviewer and provide constructive feedback on the following changes.
+					Give a minimum of one and a maximum of five suggestions per file most relevant first.
+					Use markdown as the output if possible. Output should be formatted like:
+					## [filename]
+					- [suggestion 1 text]
+					- [suggestion 2 text]
+					...
+					Don't mention line numbers and don't be too nit-picky.
+				""");
 
 			chatMessageBuilder.AppendLine(
 				"The following files are updates in the pull request and are in unidiff format:");
@@ -221,67 +229,70 @@ internal class AiCommenter
 	{
 		// Max size reached, we ask ChatGTP
 		string prompt = chatMessageBuilder.Replace("\r\n", "\n").ToString();
-		
-		if (model is Models.Model.Gpt_3_5_Turbo or Models.Model.Gpt_4 or Models.Model.Gpt_4_32k)
-		{
-			double tokenPromptCostInCent = model switch
-			{
-				Models.Model.Gpt_3_5_Turbo => 0.15,
-				Models.Model.Gpt_4 => 3,
-				Models.Model.Gpt_4_32k => 6,
-				_ => throw new ArgumentOutOfRangeException(nameof(model), model, null)
-			};
 
-			double tokenCompletionCostInCent = model switch
-			{
-				Models.Model.Gpt_3_5_Turbo => 0.2,
-				Models.Model.Gpt_4 => 6,
-				Models.Model.Gpt_4_32k => 12,
-				_ => throw new ArgumentOutOfRangeException(nameof(model), model, null)
-			};
-
-			int count = 0;
-			bool success = false;
-			while (!success)
-			{
-				try
-				{
-					ChatCompletionCreateResponse completionResult = await openAiService.ChatCompletion.CreateCompletion(
-						new ChatCompletionCreateRequest
-						{
-							Messages = new List<ChatMessage>
-							{
-								ChatMessage.FromUser(prompt)
-							},
-
-							Model = model.EnumToString()
-						});
-
-					if (completionResult.Successful)
-					{
-						Console.WriteLine(completionResult.Choices.First().Message.Content);
-						response.AppendLine();
-						response.AppendLine(completionResult.Choices.First().Message.Content);
-						tokenCount += completionResult.Usage.TotalTokens;
-						costCent += tokenPromptCostInCent * completionResult.Usage.PromptTokens / 1000.0;
-						costCent += tokenCompletionCostInCent * (completionResult.Usage.CompletionTokens ?? 0) / 1000.0;
-
-						success = true;
-					}
-				}
-				catch (TaskCanceledException)
-				{
-					count++;
-					if (count > 5)
-					{
-						throw;
-					}
-				}
-			}
-		}
-		else
+		if (model is not (Models.Model.Gpt_3_5_Turbo
+		    or Models.Model.Gpt_4
+		    or Models.Model.Gpt_4_32k
+		    or Models.Model.Gpt_3_5_Turbo_16k))
 		{
 			throw new Exception("Invalid model");
+		}
+
+		double tokenPromptCostInCent = model switch
+		{
+			Models.Model.Gpt_3_5_Turbo => 0.15,
+			Models.Model.Gpt_3_5_Turbo_16k => 0.3,
+			Models.Model.Gpt_4 => 3,
+			Models.Model.Gpt_4_32k => 6,
+			_ => throw new ArgumentOutOfRangeException(nameof(model), model, null)
+		};
+
+		double tokenCompletionCostInCent = model switch
+		{
+			Models.Model.Gpt_3_5_Turbo => 0.2,
+			Models.Model.Gpt_3_5_Turbo_16k => 0.4,
+			Models.Model.Gpt_4 => 6,
+			Models.Model.Gpt_4_32k => 12,
+			_ => throw new ArgumentOutOfRangeException(nameof(model), model, null)
+		};
+
+		int count = 0;
+		bool success = false;
+		while (!success)
+		{
+			try
+			{
+				ChatCompletionCreateResponse completionResult = await openAiService.ChatCompletion.CreateCompletion(
+					new ChatCompletionCreateRequest
+					{
+						Messages = new List<ChatMessage>
+						{
+							ChatMessage.FromUser(prompt)
+						},
+
+						Model = model.EnumToString()
+					});
+
+				if (completionResult.Successful)
+				{
+					Console.WriteLine(completionResult.Choices.First().Message.Content);
+					response.AppendLine();
+					response.AppendLine(completionResult.Choices.First().Message.Content);
+					tokenCount += completionResult.Usage.TotalTokens;
+					costCent += tokenPromptCostInCent * completionResult.Usage.PromptTokens / 1000.0;
+					costCent += tokenCompletionCostInCent * (completionResult.Usage.CompletionTokens ?? 0) / 1000.0;
+
+					success = true;
+				}
+			}
+			catch (TaskCanceledException)
+			{
+				count++;
+				if (count > 5)
+				{
+					throw;
+				}
+			}
 		}
 
 		return (tokenCount, costCent);
