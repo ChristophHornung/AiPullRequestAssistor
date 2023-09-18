@@ -204,6 +204,7 @@ internal class AiCommenter
 				- [suggestion 1 text]
 				- [suggestion 2 text]
 				...
+				Don't mention line numbers and don't be too nit-picky.
 			""");
 
 			chatMessageBuilder.AppendLine(
@@ -225,7 +226,7 @@ internal class AiCommenter
 		{
 			double tokenPromptCostInCent = model switch
 			{
-				Models.Model.Gpt_3_5_Turbo => 0.2,
+				Models.Model.Gpt_3_5_Turbo => 0.15,
 				Models.Model.Gpt_4 => 3,
 				Models.Model.Gpt_4_32k => 6,
 				_ => throw new ArgumentOutOfRangeException(nameof(model), model, null)
