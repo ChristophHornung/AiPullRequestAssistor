@@ -214,6 +214,7 @@ internal class AiCommenter
 			chatMessageBuilder.AppendLine(
 				"""
 					Act as a code reviewer for a pull-request and provide constructive feedback on the following changes.
+					Ignore code that was not changed in this PR.
 					Give a minimum of one and a maximum of five suggestions per file most relevant first.
 					Use markdown as the output if possible. Output should be formatted like:
 					## [fullPathFilename]
@@ -224,7 +225,7 @@ internal class AiCommenter
 				""");
 
 			chatMessageBuilder.AppendLine(
-				"The following files are updates in the pull request and are in unidiff format (added lines start with +, removed lines with -):");
+				"The following files are updates in the pull request and are in unidiff format (added lines start with +, removed lines with -)");
 		}
 		else
 		{
