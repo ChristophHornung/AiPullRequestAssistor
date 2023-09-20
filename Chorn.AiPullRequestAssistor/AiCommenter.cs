@@ -81,8 +81,16 @@ internal class AiCommenter
 			Models.Model.Gpt_4_32k => 31_500,
 			_ => 30_000
 		};
+
+		List<ChangePrompt> validChangeInputs = changeInputs.Where(c => c.Content.Length / 4 < maxSingleRequestTokenCount).ToList();
+		List<ChangePrompt> tooLargeChangeInputs = changeInputs.Where(c => c.Content.Length / 4 >= maxSingleRequestTokenCount).ToList();
+		foreach (ChangePrompt changeInput in tooLargeChangeInputs)
+		{
+			Console.WriteLine($"File {changeInput.Path} is too large to comment on (estimated {changeInput.Content.Length / 4}, limit is {maxSingleRequestTokenCount}).");
+		}
+
 		int maxTotalRequestTokenCount = arg.ParseResult.GetValueForOption(AiAssistorCommands.MaxTotalTokenOption);
-		int estimatedTokens = changeInputs.Sum(i => i.Content.Length) / 4;
+		int estimatedTokens = validChangeInputs.Sum(i => i.Content.Length) / 4;
 		if (maxTotalRequestTokenCount > 0 && estimatedTokens > maxTotalRequestTokenCount)
 		{
 			Console.WriteLine(
@@ -97,7 +105,7 @@ internal class AiCommenter
 
 		Console.WriteLine("Requesting AI comments.");
 		bool allTokensSpend = false;
-		foreach (ChangePrompt input in changeInputs.Where(c => c.Content.Length / 4 < maxSingleRequestTokenCount))
+		foreach (ChangePrompt input in validChangeInputs)
 		{
 			if ((input.Content.Length + chatMessageBuilder.Length) / 4 > maxSingleRequestTokenCount && !allTokensSpend)
 			{
@@ -344,8 +352,8 @@ internal class AiCommenter
 
 				using StreamReader sr1 = new StreamReader(beforeMergeFileContents);
 
-				var differ = new InlineDiffBuilder(new Differ());
-				var diff = differ.BuildDiffModel(await sr1.ReadToEndAsync(), afterMergeContent, true);
+				InlineDiffBuilder differ = new InlineDiffBuilder(new Differ());
+				DiffPaneModel diff = differ.BuildDiffModel(await sr1.ReadToEndAsync(), afterMergeContent, true);
 
 				StringBuilder diffBuilder = new();
 				diffBuilder.AppendLine("```diff");
