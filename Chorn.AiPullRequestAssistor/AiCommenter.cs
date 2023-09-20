@@ -213,18 +213,18 @@ internal class AiCommenter
 		{
 			chatMessageBuilder.AppendLine(
 				"""
-					Act as a code reviewer and provide constructive feedback on the following changes.
+					Act as a code reviewer for a pull-request and provide constructive feedback on the following changes.
 					Give a minimum of one and a maximum of five suggestions per file most relevant first.
 					Use markdown as the output if possible. Output should be formatted like:
-					## [filename]
+					## [fullPathFilename]
 					- [suggestion 1 text]
 					- [suggestion 2 text]
 					...
-					Don't mention line numbers and don't be too nit-picky.
+					Focus on the changed parts, don't mention line numbers and don't be too nit-picky.
 				""");
 
 			chatMessageBuilder.AppendLine(
-				"The following files are updates in the pull request and are in unidiff format:");
+				"The following files are updates in the pull request and are in unidiff format (added lines start with +, removed lines with -):");
 		}
 		else
 		{
