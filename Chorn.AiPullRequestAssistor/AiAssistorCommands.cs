@@ -48,17 +48,24 @@ internal static class AiAssistorCommands
 			description:
 			"The maximum total token count to use for one PR comment. " +
 			"Once the limit is reached no additional requests are made for one PR - this means the total token count can be slightly larger than this value. " +
-			"If the limit is reached by just counting the input no request will be made. "+
+			"If the limit is reached by just counting the input no request will be made. " +
 			"Set to 0 to allow arbitrarily large requests - BEWARE though this might incur a very high cost for very large PRs.");
 		MaxTotalTokenOption.SetDefaultValue(100_000);
 
 		OpenAiModelOption = new Option<Models.Model>(name: "--model",
 			description: "The model to use for the AI request.");
-
 		OpenAiModelOption.AddAlias("-m");
-		OpenAiModelOption.FromAmong(Models.Model.Gpt_3_5_Turbo.ToString(), Models.Model.Gpt_3_5_Turbo_16k.ToString(), Models.Model.Gpt_4.ToString(),
+		OpenAiModelOption.FromAmong(Models.Model.Gpt_3_5_Turbo.ToString(), Models.Model.Gpt_3_5_Turbo_16k.ToString(),
+			Models.Model.Gpt_4.ToString(),
 			Models.Model.Gpt_4_32k.ToString());
 		OpenAiModelOption.SetDefaultValue(Models.Model.Gpt_3_5_Turbo);
+
+		StrategyOption = new Option<FileRequestStrategy>(name: "--strategy",
+			description: "The request strategy.");
+		StrategyOption.AddAlias("-s");
+		StrategyOption.FromAmong(FileRequestStrategy.FillContextWithFiles.ToString(),
+			FileRequestStrategy.SingleRequestForFile.ToString());
+		StrategyOption.SetDefaultValue(FileRequestStrategy.SingleRequestForFile);
 
 		PrIdArgument = new Argument<int>(name: "pull-request-id",
 			description: "The id of the pull request to comment on.");
@@ -75,6 +82,7 @@ internal static class AiAssistorCommands
 		AddCommentCommand.AddOption(RepoOption);
 		AddCommentCommand.AddOption(OpenAiTokenOption);
 		AddCommentCommand.AddOption(OpenAiModelOption);
+		AddCommentCommand.AddOption(StrategyOption);
 		AddCommentCommand.AddOption(MaxTotalTokenOption);
 		AddCommentCommand.AddOption(AzureSettingsOption);
 		AddCommentCommand.AddOption(InitialPromptOption);
@@ -82,6 +90,7 @@ internal static class AiAssistorCommands
 
 		AddCommentDevOpsCommand.AddOption(OpenAiTokenOption);
 		AddCommentDevOpsCommand.AddOption(OpenAiModelOption);
+		AddCommentDevOpsCommand.AddOption(StrategyOption);
 		AddCommentDevOpsCommand.AddOption(MaxTotalTokenOption);
 		AddCommentDevOpsCommand.AddOption(InitialPromptOption);
 		AddCommentDevOpsCommand.AddOption(AzureSettingsOption);
@@ -93,6 +102,7 @@ internal static class AiAssistorCommands
 		AddCommentDevOpsCommand.SetHandler(AiCommenter.AddAiComment);
 	}
 
+	public static Option<FileRequestStrategy> StrategyOption { get; }
 	public static Option<string> OrgOption { get; }
 	public static Option<string> ProjOption { get; }
 	public static Option<string> RepoOption { get; }

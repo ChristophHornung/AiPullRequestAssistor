@@ -69,9 +69,9 @@ internal class AiCommenter
 
 
 		Models.Model model = arg.ParseResult.GetValueForOption(AiAssistorCommands.OpenAiModelOption);
-		StringBuilder chatMessageBuilder = new();
+		List<ChatMessage> chatMessages = new();
 
-		BuildInitialInstruction(chatMessageBuilder, initialPrompt);
+		BuildInitialInstruction(chatMessages, initialPrompt);
 
 		int maxSingleRequestTokenCount = model switch
 		{
@@ -82,11 +82,14 @@ internal class AiCommenter
 			_ => 30_000
 		};
 
-		List<ChangePrompt> validChangeInputs = changeInputs.Where(c => c.Content.Length / 4 < maxSingleRequestTokenCount).ToList();
-		List<ChangePrompt> tooLargeChangeInputs = changeInputs.Where(c => c.Content.Length / 4 >= maxSingleRequestTokenCount).ToList();
+		List<ChangePrompt> validChangeInputs =
+			changeInputs.Where(c => c.Content.Length / 4 < maxSingleRequestTokenCount).ToList();
+		List<ChangePrompt> tooLargeChangeInputs =
+			changeInputs.Where(c => c.Content.Length / 4 >= maxSingleRequestTokenCount).ToList();
 		foreach (ChangePrompt changeInput in tooLargeChangeInputs)
 		{
-			Console.WriteLine($"File {changeInput.Path} is too large to comment on (estimated {changeInput.Content.Length / 4}, limit is {maxSingleRequestTokenCount}).");
+			Console.WriteLine(
+				$"File {changeInput.Path} is too large to comment on (estimated {changeInput.Content.Length / 4}, limit is {maxSingleRequestTokenCount}).");
 		}
 
 		int maxTotalRequestTokenCount = arg.ParseResult.GetValueForOption(AiAssistorCommands.MaxTotalTokenOption);
@@ -105,29 +108,36 @@ internal class AiCommenter
 
 		Console.WriteLine("Requesting AI comments.");
 		bool allTokensSpend = false;
+		bool hasContent = false;
 		foreach (ChangePrompt input in validChangeInputs)
 		{
-			if ((input.Content.Length + chatMessageBuilder.Length) / 4 > maxSingleRequestTokenCount && !allTokensSpend)
+			bool addToExisting =
+				input.Content.Length / 4 + chatMessages.Sum(c=>c.Content.Length) / 4 < maxSingleRequestTokenCount &&
+				arg.ParseResult.GetValueForOption(AiAssistorCommands.StrategyOption) !=
+				FileRequestStrategy.SingleRequestForFile;
+
+			if (!addToExisting && hasContent && !allTokensSpend)
 			{
 				(tokenCount, costCent) =
-					await AskAi(chatMessageBuilder, model, openAiService, response, tokenCount, costCent);
+					await AskAi(chatMessages, model, openAiService, response, tokenCount, costCent);
 				if (maxTotalRequestTokenCount > 0 && tokenCount >= maxTotalRequestTokenCount)
 				{
 					// We already expended all tokens, we can't ask anymore.
 					allTokensSpend = true;
 				}
 
-				chatMessageBuilder = new StringBuilder();
-				BuildInitialInstruction(chatMessageBuilder, initialPrompt);
+				chatMessages.Clear();
+				BuildInitialInstruction(chatMessages, initialPrompt);
 			}
 
-			input.AddToMessage(chatMessageBuilder);
+			input.AddToMessage(chatMessages);
+			hasContent = true;
 		}
 
 		// The last message that may be partially constructed.
 		if (!allTokensSpend)
 		{
-			(tokenCount, costCent) = await AskAi(chatMessageBuilder, model, openAiService, response, tokenCount,
+			(tokenCount, costCent) = await AskAi(chatMessages, model, openAiService, response, tokenCount,
 				costCent);
 		}
 
@@ -197,6 +207,7 @@ internal class AiCommenter
 		Console.WriteLine("Retrieving commit details.");
 		GitCommit commit = await gitClient.GetCommitAsync(projectName, pullRequestCommit.CommitId, repositoryName,
 			cancellationToken: cancellationToken);
+
 		GitCommitChanges commitChanges =
 			await gitClient.GetChangesAsync(projectName, commit.CommitId, repositoryName,
 				cancellationToken: cancellationToken);
@@ -207,38 +218,128 @@ internal class AiCommenter
 		return changeInputs;
 	}
 
-	private static void BuildInitialInstruction(StringBuilder chatMessageBuilder, string? initialPrompt)
+	private static void BuildInitialInstruction(List<ChatMessage> chatMessageBuilder, string? initialPrompt)
 	{
 		if (string.IsNullOrWhiteSpace(initialPrompt))
 		{
-			chatMessageBuilder.AppendLine(
+			chatMessageBuilder.Add(ChatMessage.FromUser(
 				"""
-					Act as a code reviewer for a pull-request and provide constructive feedback on the following changes.
-					Ignore code that was not changed in this PR.
-					Give a minimum of one and a maximum of five suggestions per file most relevant first.
-					Use markdown as the output if possible. Output should be formatted like:
-					## [fullPathFilename]
-					- [suggestion 1 text]
-					- [suggestion 2 text]
-					...
-					Focus on the changed parts, don't mention line numbers and don't be too nit-picky.
-				""");
+				Act as a code reviewer for a pull-request and provide constructive feedback .
+				The process will have two steps, first you will summarize the changes and then you will give your feedback.
+				Always ignore code that was not changed in this PR.
+				We will start with summarizing the changes once you are ready.
+				"""));
 
-			chatMessageBuilder.AppendLine(
-				"The following files are updates in the pull request and are in unidiff format (added lines start with +, removed lines with -)");
+			chatMessageBuilder.Add(ChatMessage.FromAssistant(
+				"""
+				Absolutely, I'm ready to review the pull request. Please provide the details or code changes that you'd like me to summarize and review.
+				"""));
+
+
+//			Act as a code reviewer for a pull-request and provide constructive feedback on the following changes.
+//				Ignore code that was not changed in this PR.
+//				Give a minimum of one and a maximum of five suggestions per file most relevant first.
+//				Use markdown as the output if possible. Output should be formatted like:
+//## [fullPathFilename]
+//			- [suggestion 1 text]
+//			- [suggestion 2 text]
+//			...
+//			Focus on the changed parts, don't mention line numbers and don't be too nit-picky.
+
+			//chatMessageBuilder.AppendLine(
+			//	"The following files are updates in the pull request and are in unidiff format (added lines start with +, removed lines with -)");
 		}
 		else
 		{
-			chatMessageBuilder.AppendLine(initialPrompt);
+			chatMessageBuilder.Add(ChatMessage.FromUser(initialPrompt!));
+
+			chatMessageBuilder.Add(ChatMessage.FromAssistant(
+				"""
+				Absolutely, I'm ready to review the pull request. Please provide the details or code changes that you'd like me to summarize and review.
+				"""));
 		}
 	}
 
-	private static async Task<(int tokenCount, double costCent)> AskAi(StringBuilder chatMessageBuilder,
+	private static async Task<(int tokenCount, double costCent)> AskAi(List<ChatMessage> chatMessagesStart,
 		Models.Model model, OpenAIService openAiService, StringBuilder response, int tokenCount, double costCent)
 	{
-		// Max size reached, we ask ChatGTP
-		string prompt = chatMessageBuilder.Replace("\r\n", "\n").ToString();
+		List<ChatMessage> chatMessages = new(chatMessagesStart);
 
+		double tokenPromptCostInCent = GetTokenCosts(model, out double tokenCompletionCostInCent);
+
+		chatMessages.Add(ChatMessage.FromUser("Now please provide a summary of the changes. Ignore unchanged code, it is only provided for context, do not provide a review yet."));
+
+		int count = 0;
+		bool success = false;
+		while (!success)
+		{
+			try
+			{
+				ChatCompletionCreateResponse completionResult = await openAiService.ChatCompletion.CreateCompletion(
+					new ChatCompletionCreateRequest
+					{
+						Messages = chatMessages,
+						Model = model.EnumToString()
+					});
+
+				if (completionResult.Successful)
+				{
+					Console.WriteLine(completionResult.Choices.First().Message.Content);
+					chatMessages.Add(completionResult.Choices.First().Message);
+					tokenCount += completionResult.Usage.TotalTokens;
+					costCent += tokenPromptCostInCent * completionResult.Usage.PromptTokens / 1000.0;
+					costCent += tokenCompletionCostInCent * (completionResult.Usage.CompletionTokens ?? 0) / 1000.0;
+
+					chatMessages.Add(ChatMessage.FromUser(
+						"""
+						Now provide constructive feedback on the changes.
+						Ignore code that was not changed in this PR.
+						Give a minimum of one and a maximum of five suggestions per file with the most relevant first.
+						Use markdown as the output if possible. Output should be formatted like:
+						## [fullPathFilename]
+							- [suggestion 1 text]
+							- [suggestion 2 text]
+						...
+						Focus on the changed parts, don't mention line numbers and don't be too nit-picky.
+						"""));
+
+					completionResult = await openAiService.ChatCompletion.CreateCompletion(
+						new ChatCompletionCreateRequest
+						{
+							Messages = chatMessages,
+							Model = model.EnumToString()
+						});
+
+					if (completionResult.Successful)
+					{
+						Console.WriteLine(completionResult.Choices.First().Message.Content);
+						chatMessages.Add(completionResult.Choices.First().Message);
+						response.AppendLine();
+						response.AppendLine(completionResult.Choices.First().Message.Content);
+						tokenCount += completionResult.Usage.TotalTokens;
+						costCent += tokenPromptCostInCent * completionResult.Usage.PromptTokens / 1000.0;
+						costCent += tokenCompletionCostInCent * (completionResult.Usage.CompletionTokens ?? 0) / 1000.0;
+
+						success = true;
+					}
+				}
+			}
+			catch (TaskCanceledException)
+			{
+				count++;
+				if (count > 5)
+				{
+					throw;
+				}
+			}
+		}
+
+		return (tokenCount, costCent);
+	}
+
+	private static double GetTokenCosts(Models.Model model, out double tokenCompletionCostInCent)
+	{
+		// Max size reached, we ask ChatGTP
 		if (model is not (Models.Model.Gpt_3_5_Turbo
 		    or Models.Model.Gpt_4
 		    or Models.Model.Gpt_4_32k
@@ -256,7 +357,7 @@ internal class AiCommenter
 			_ => throw new ArgumentOutOfRangeException(nameof(model), model, null)
 		};
 
-		double tokenCompletionCostInCent = model switch
+		tokenCompletionCostInCent = model switch
 		{
 			Models.Model.Gpt_3_5_Turbo => 0.2,
 			Models.Model.Gpt_3_5_Turbo_16k => 0.4,
@@ -264,47 +365,7 @@ internal class AiCommenter
 			Models.Model.Gpt_4_32k => 12,
 			_ => throw new ArgumentOutOfRangeException(nameof(model), model, null)
 		};
-
-		int count = 0;
-		bool success = false;
-		while (!success)
-		{
-			try
-			{
-				ChatCompletionCreateResponse completionResult = await openAiService.ChatCompletion.CreateCompletion(
-					new ChatCompletionCreateRequest
-					{
-						Messages = new List<ChatMessage>
-						{
-							ChatMessage.FromUser(prompt)
-						},
-
-						Model = model.EnumToString()
-					});
-
-				if (completionResult.Successful)
-				{
-					Console.WriteLine(completionResult.Choices.First().Message.Content);
-					response.AppendLine();
-					response.AppendLine(completionResult.Choices.First().Message.Content);
-					tokenCount += completionResult.Usage.TotalTokens;
-					costCent += tokenPromptCostInCent * completionResult.Usage.PromptTokens / 1000.0;
-					costCent += tokenCompletionCostInCent * (completionResult.Usage.CompletionTokens ?? 0) / 1000.0;
-
-					success = true;
-				}
-			}
-			catch (TaskCanceledException)
-			{
-				count++;
-				if (count > 5)
-				{
-					throw;
-				}
-			}
-		}
-
-		return (tokenCount, costCent);
+		return tokenPromptCostInCent;
 	}
 
 	private static async Task<List<ChangePrompt>> GetFileChangeInput(GitCommitChanges commitChanges,
@@ -366,13 +427,13 @@ internal class AiCommenter
 					switch (line.Type)
 					{
 						case ChangeType.Inserted:
-							diffBuilder.AppendLine("+ " + line.Text);
+							diffBuilder.AppendLine("+" + line.Text);
 							break;
 						case ChangeType.Deleted:
-							diffBuilder.AppendLine("- " + line.Text);
+							diffBuilder.AppendLine("-" + line.Text);
 							break;
-						default:
-							diffBuilder.AppendLine("  " + line.Text);
+						default: 
+							diffBuilder.AppendLine(" " + line.Text);
 							break;
 					}
 				}
