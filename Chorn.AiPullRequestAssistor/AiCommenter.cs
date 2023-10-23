@@ -294,13 +294,13 @@ internal class AiCommenter
 						"""
 						Now provide constructive feedback on the changes.
 						Ignore code that was not changed in this PR.
-						Give a minimum of one and a maximum of five suggestions per file with the most relevant first.
+						Give between one and three suggestions per file with the most relevant first.
 						Use markdown as the output if possible. Output should be formatted like:
 						## [fullPathFilename]
 							- [suggestion 1 text]
 							- [suggestion 2 text]
 						...
-						Focus on the changed parts, don't mention line numbers and don't be too nit-picky.
+						Focus on the changed parts only, don't mention line numbers and don't be too nit-picky.
 						"""));
 
 					completionResult = await openAiService.ChatCompletion.CreateCompletion(
