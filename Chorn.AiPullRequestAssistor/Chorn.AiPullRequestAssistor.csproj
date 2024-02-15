@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<TargetFrameworks>net48;net7.0</TargetFrameworks>
+		<TargetFrameworks>net48;net8.0</TargetFrameworks>
 		<ImplicitUsings>true</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<LangVersion>latest</LangVersion>
@@ -24,20 +24,20 @@
 		<DebugType>None</DebugType>
 	</PropertyGroup>
 	<ItemGroup>
-		<PackageReference Include="Betalgo.OpenAI" Version="7.1.5" />
-		<PackageReference Include="DiffPlex" Version="1.7.1" />
-		<PackageReference Include="Microsoft.Extensions.Hosting" Version="7.0.1" />
+		<PackageReference Include="Betalgo.OpenAI" Version="7.4.5" />
+		<PackageReference Include="DiffPlex" Version="1.7.2" />
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
 		<PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
 		<PackageReference Include="System.CommandLine.Hosting" Version="0.4.0-alpha.22272.1" />
 		<PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
 	</ItemGroup>
 	<ItemGroup Condition="$(TargetFramework.StartsWith('net4'))">
-		<PackageReference Include="Microsoft.TeamFoundationServer.Client" Version="19.220.0-preview" />
-		<PackageReference Include="Microsoft.VisualStudio.Services.InteractiveClient" Version="19.220.0-preview" />
-		<PackageReference Include="Microsoft.TeamFoundationServer.ExtendedClient" Version="19.220.0-preview" />
+		<PackageReference Include="Microsoft.TeamFoundationServer.Client" Version="19.232.0-preview" />
+		<PackageReference Include="Microsoft.VisualStudio.Services.InteractiveClient" Version="19.232.0-preview" />
+		<PackageReference Include="Microsoft.TeamFoundationServer.ExtendedClient" Version="19.232.0-preview" />
 	</ItemGroup>
-	<ItemGroup Condition="$(TargetFramework.StartsWith('net7'))">
-		<PackageReference Include="Microsoft.TeamFoundationServer.Client" Version="19.218.0-preview" />
-		<PackageReference Include="Microsoft.VisualStudio.Services.InteractiveClient" Version="19.218.0-preview" />
+	<ItemGroup Condition="$(TargetFramework.StartsWith('net8'))">
+		<PackageReference Include="Microsoft.TeamFoundationServer.Client" Version="19.232.0-preview" />
+		<PackageReference Include="Microsoft.VisualStudio.Services.InteractiveClient" Version="19.232.0-preview" />
 	</ItemGroup>
 </Project>
