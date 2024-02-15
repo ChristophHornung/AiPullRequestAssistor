@@ -336,7 +336,7 @@ internal class AiCommenter
 						"""
 						Now provide constructive feedback on the changes.
 						Ignore code that was not changed in this PR.
-						Give a minimum of one and a maximum of five suggestions per file with the most relevant first.
+						Give a minimum of one and a maximum of three suggestions per file with the most relevant first.
 						Output as a JSON in the format
 						{
 							"reviews": [
