@@ -109,6 +109,13 @@ internal class AiCommenter
 		Console.WriteLine("Requesting AI comments.");
 		bool allTokensSpend = false;
 		bool hasContent = false;
+
+		if (validChangeInputs.Count == 0)
+		{
+			Console.WriteLine("No valid changes to comment on.");
+			return;
+		}
+
 		foreach (ChangePrompt input in validChangeInputs)
 		{
 			bool addToExisting =
