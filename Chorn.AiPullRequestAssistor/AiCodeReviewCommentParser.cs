@@ -13,6 +13,7 @@ internal static class AiCodeReviewCommentParser
 
 		JsonSerializerOptions options = new JsonSerializerOptions
 		{
+			AllowTrailingCommas = true,
 			PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
 			PropertyNameCaseInsensitive = true,
 		};
