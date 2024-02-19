@@ -1,8 +1,5 @@
 ﻿using System.CommandLine.Invocation;
 using System.Text;
-using DiffPlex;
-using DiffPlex.DiffBuilder;
-using DiffPlex.DiffBuilder.Model;
 using Microsoft.TeamFoundation.SourceControl.WebApi;
 using Microsoft.VisualStudio.Services.WebApi;
 using OpenAI;
@@ -103,7 +100,6 @@ internal class AiCommenter
 
 		int tokenCount = 0;
 		double costCent = 0;
-
 
 		List<AiCodeReviewComment> codeReviewComments = [];
 		Console.WriteLine("Requesting AI comments.");
@@ -256,7 +252,18 @@ internal class AiCommenter
 			await gitClient.GetPullRequestAsync(projectName, repositoryName, pullRequestId: pullRequestId,
 				includeCommits: true, cancellationToken: cancellationToken);
 
-		GitCommitRef pullRequestCommit = pullRequest.LastMergeCommit;
+		const bool reviewLastCommit = true;
+		GitCommitRef pullRequestCommit;
+		if (reviewLastCommit)
+		{
+			// We only review the last commit of the PR, not the merge commit.
+			pullRequestCommit = pullRequest.LastMergeSourceCommit;
+		}
+		else
+		{
+			// We review the full merge commit.
+			pullRequestCommit = pullRequest.LastMergeCommit;
+		}
 
 		Console.WriteLine("Retrieving commit details.");
 		GitCommit commit = await gitClient.GetCommitAsync(projectName, pullRequestCommit.CommitId, repositoryName,
@@ -267,7 +274,7 @@ internal class AiCommenter
 				cancellationToken: cancellationToken);
 
 		List<ChangePrompt> changeInputs =
-			await GetFileChangeInput(commitChanges, gitClient, projectName, repositoryName, pullRequest,
+			await FileChangePromptBuilder.GetFileChangeInput(commitChanges, gitClient, projectName, repositoryName, pullRequest,
 				cancellationToken);
 		return changeInputs;
 	}
@@ -432,88 +439,5 @@ internal class AiCommenter
 			_ => throw new ArgumentOutOfRangeException(nameof(model), model, null)
 		};
 		return tokenPromptCostInCent;
-	}
-
-	private static async Task<List<ChangePrompt>> GetFileChangeInput(GitCommitChanges commitChanges,
-		GitHttpClient gitClient,
-		string projectName, string repositoryName, GitPullRequest pullRequest, CancellationToken cancellationToken)
-	{
-		List<ChangePrompt> inputs = new();
-		foreach (GitChange commitChange in commitChanges.Changes.Where(c =>
-			         !c.Item.IsFolder && c.ChangeType is VersionControlChangeType.Edit or VersionControlChangeType.Add))
-		{
-			using Stream afterMergeFileContents = await gitClient.GetItemTextAsync(projectName, repositoryName,
-				path: commitChange.Item.Path, versionDescriptor: new GitVersionDescriptor
-				{
-					VersionType = GitVersionType.Commit,
-					Version = pullRequest.LastMergeCommit.CommitId,
-				}, cancellationToken: cancellationToken);
-
-			using StreamReader sr = new StreamReader(afterMergeFileContents);
-			string afterMergeContent = await sr.ReadToEndAsync();
-
-			if (afterMergeContent.Contains('\0'))
-			{
-				// We assume the file is binary and skip it.
-				continue;
-			}
-
-			if (commitChange.ChangeType == VersionControlChangeType.Add)
-			{
-				StringBuilder addBuilder = new();
-				addBuilder.AppendLine("```");
-				addBuilder.AppendLine(afterMergeContent);
-				addBuilder.AppendLine("```");
-				inputs.Add(new ChangePrompt(VersionControlChangeType.Add,
-					commitChange.Item.Path,
-					afterMergeContent
-				));
-			}
-			else if (commitChange.ChangeType == VersionControlChangeType.Edit)
-			{
-				using Stream beforeMergeFileContents = await gitClient.GetItemTextAsync(projectName, repositoryName,
-					path: commitChange.Item.Path, versionDescriptor: new GitVersionDescriptor
-					{
-						VersionType = GitVersionType.Commit,
-						Version = pullRequest.LastMergeTargetCommit.CommitId,
-					}, cancellationToken: cancellationToken);
-
-				using StreamReader sr1 = new StreamReader(beforeMergeFileContents);
-
-				InlineDiffBuilder differ = new InlineDiffBuilder(new Differ());
-				DiffPaneModel diff = differ.BuildDiffModel(await sr1.ReadToEndAsync(), afterMergeContent, true);
-
-				StringBuilder diffBuilder = new();
-				diffBuilder.AppendLine("```diff");
-				diffBuilder.AppendLine("--- " + commitChange.Item.Path);
-				diffBuilder.AppendLine("+++ " + commitChange.Item.Path);
-
-				foreach (DiffPiece? line in diff.Lines)
-				{
-					switch (line.Type)
-					{
-						case ChangeType.Inserted:
-							diffBuilder.AppendLine("+" + line.Text);
-							break;
-						case ChangeType.Deleted:
-							diffBuilder.AppendLine("-" + line.Text);
-							break;
-						default:
-							diffBuilder.AppendLine(" " + line.Text);
-							break;
-					}
-				}
-
-				diffBuilder.AppendLine("```");
-
-				inputs.Add(new ChangePrompt(
-					VersionControlChangeType.Edit,
-					commitChange.Item.Path,
-					diffBuilder.ToString()
-				));
-			}
-		}
-
-		return inputs;
 	}
 }

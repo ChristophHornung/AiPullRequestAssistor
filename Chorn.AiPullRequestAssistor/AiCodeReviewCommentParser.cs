@@ -11,7 +11,7 @@ internal static class AiCodeReviewCommentParser
 			return [];
 		}
 
-		JsonSerializerOptions options = new JsonSerializerOptions
+		JsonSerializerOptions options = new()
 		{
 			AllowTrailingCommas = true,
 			PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
