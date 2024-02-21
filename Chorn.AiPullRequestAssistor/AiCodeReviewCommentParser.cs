@@ -6,7 +6,7 @@ internal static class AiCodeReviewCommentParser
 {
 	public static List<AiCodeReviewComment> Parse(string? comment)
 	{
-		if (string.IsNullOrEmpty(comment))
+		if (comment == null || comment == string.Empty)
 		{
 			return [];
 		}

@@ -112,17 +112,20 @@ internal class AiCommenter
 			return;
 		}
 
+		string prComment =
+			await GetPullRequestComment(gitClient, projectName, repositoryName, pullRequestId, cancellationToken);
+
 		foreach (ChangePrompt input in validChangeInputs)
 		{
 			bool addToExisting =
-				input.Content.Length / 4 + chatMessages.Sum(c => c.Content.Length) / 4 < maxSingleRequestTokenCount &&
+				input.Content.Length / 4 + chatMessages.Sum(c => c.Content!.Length) / 4 < maxSingleRequestTokenCount &&
 				arg.ParseResult.GetValueForOption(AiAssistorCommands.StrategyOption) !=
 				FileRequestStrategy.SingleRequestForFile;
 
 			if (!addToExisting && hasContent && !allTokensSpend)
 			{
 				(tokenCount, costCent) =
-					await AskAi(chatMessages, model, openAiService, codeReviewComments, tokenCount, costCent);
+					await AskAi(chatMessages, model, openAiService, codeReviewComments, prComment, tokenCount, costCent);
 				if (maxTotalRequestTokenCount > 0 && tokenCount >= maxTotalRequestTokenCount)
 				{
 					// We already expended all tokens, we can't ask anymore.
@@ -140,8 +143,8 @@ internal class AiCommenter
 		// The last message that may be partially constructed.
 		if (!allTokensSpend)
 		{
-			(tokenCount, costCent) = await AskAi(chatMessages, model, openAiService, codeReviewComments, tokenCount,
-				costCent);
+			(tokenCount, costCent) = await AskAi(chatMessages, model, openAiService, codeReviewComments, prComment,
+				tokenCount, costCent);
 		}
 
 		if (allTokensSpend)
@@ -199,7 +202,7 @@ internal class AiCommenter
 
 			comment.ParentCommentId = aiCommentThread.Comments.First().Id;
 			await gitClient.CreateCommentAsync(comment, projectName, repositoryId: repositoryName,
-					pullRequestId: pullRequestId, threadId: aiCommentThread.Id, cancellationToken: cancellationToken);
+				pullRequestId: pullRequestId, threadId: aiCommentThread.Id, cancellationToken: cancellationToken);
 		}
 
 		foreach (AiCodeReviewComment codeReviewComment in codeReviewComments)
@@ -243,6 +246,17 @@ internal class AiCommenter
 		}
 	}
 
+	private static async Task<string> GetPullRequestComment(GitHttpClient gitClient, string projectName,
+		string repositoryName,
+		int pullRequestId, CancellationToken cancellationToken)
+	{
+		// Get the pull request details
+		GitPullRequest pullRequest =
+			await gitClient.GetPullRequestAsync(projectName, repositoryName, pullRequestId: pullRequestId,
+				includeCommits: true, cancellationToken: cancellationToken);
+		return $"{pullRequest.Title}\n{pullRequest.Description}";
+	}
+
 	private static async Task<List<ChangePrompt>> GetChangeInputs(GitHttpClient gitClient, string projectName,
 		string repositoryName,
 		int pullRequestId, CancellationToken cancellationToken)
@@ -251,31 +265,91 @@ internal class AiCommenter
 		GitPullRequest pullRequest =
 			await gitClient.GetPullRequestAsync(projectName, repositoryName, pullRequestId: pullRequestId,
 				includeCommits: true, cancellationToken: cancellationToken);
+		List<GitPullRequestIteration> iterations =
+			await gitClient.GetPullRequestIterationsAsync(projectName, repositoryName, pullRequestId,
+				cancellationToken: cancellationToken, includeCommits: true);
 
-		const bool reviewLastCommit = true;
-		GitCommitRef pullRequestCommit;
-		if (reviewLastCommit)
+		bool reviewLastIterationOnly = pullRequest.SupportsIterations && iterations.Count > 1;
+		IEnumerable<ExtendedGitChange> commitChanges;
+		if (reviewLastIterationOnly)
 		{
 			// We only review the last commit of the PR, not the merge commit.
-			pullRequestCommit = pullRequest.LastMergeSourceCommit;
+			// Get the iteration with the highest id.
+			GitPullRequestIteration lastIteration = iterations.OrderByDescending(i => i.Id).First();
+			int iterationId = lastIteration.Id!.Value;
+
+			Console.WriteLine($"Retrieving iteration details for iteration {iterationId}.");
+			GitPullRequestIterationChanges? iterationChanges = await gitClient.GetPullRequestIterationChangesAsync(
+				projectName, repositoryName,
+				pullRequestId,
+				iterationId, compareTo: iterationId - 1, cancellationToken: cancellationToken);
+			List<ExtendedGitChange> fullChanges = [];
+			foreach (GitPullRequestChange iterationChangesChangeEntry in iterationChanges.ChangeEntries)
+			{
+				ExtendedGitChange change = new()
+				{
+					ChangeType = iterationChangesChangeEntry.ChangeType,
+					Item = iterationChangesChangeEntry.Item,
+				};
+
+				if (change.ChangeType is VersionControlChangeType.Add or VersionControlChangeType.Edit)
+				{
+					Stream contentNew = await gitClient.GetBlobContentAsync(projectName, repositoryName,
+						iterationChangesChangeEntry.Item.ObjectId, cancellationToken: cancellationToken);
+
+					using var reader = new StreamReader(contentNew);
+					string content = await reader.ReadToEndAsync();
+
+					change.NewContent = new ItemContent
+					{
+						Content = content
+					};
+				}
+
+				if (change.ChangeType == VersionControlChangeType.Edit)
+				{
+					Stream contentOld = await gitClient.GetBlobContentAsync(projectName, repositoryName,
+												iterationChangesChangeEntry.Item.OriginalObjectId, cancellationToken: cancellationToken);
+
+					using var reader = new StreamReader(contentOld);
+					string content = await reader.ReadToEndAsync();
+
+					change.OldContent = new ItemContent
+					{
+						Content = content
+					};
+				}
+
+				fullChanges.Add(change);
+			}
+
+			commitChanges = fullChanges;
 		}
 		else
 		{
 			// We review the full merge commit.
-			pullRequestCommit = pullRequest.LastMergeCommit;
-		}
+			Console.WriteLine("Retrieving commit details.");
+			GitCommitRef pullRequestCommit = pullRequest.LastMergeCommit;
 
-		Console.WriteLine("Retrieving commit details.");
-		GitCommit commit = await gitClient.GetCommitAsync(projectName, pullRequestCommit.CommitId, repositoryName,
-			cancellationToken: cancellationToken);
-
-		GitCommitChanges commitChanges =
-			await gitClient.GetChangesAsync(projectName, commit.CommitId, repositoryName,
+			GitCommit commit = await gitClient.GetCommitAsync(projectName, pullRequestCommit.CommitId, repositoryName,
 				cancellationToken: cancellationToken);
 
+			GitCommitChanges mergeCommitChanges =
+				await gitClient.GetChangesAsync(projectName, commit.CommitId, repositoryName,
+					cancellationToken: cancellationToken);
+
+			List<ExtendedGitChange> fullChanges = [];
+			foreach (GitChange gitChange in mergeCommitChanges.Changes)
+			{
+				fullChanges.Add(await gitChange.FillContent(gitClient, projectName, repositoryName,
+					pullRequest, cancellationToken));
+			}
+
+			commitChanges = fullChanges;
+		}
+
 		List<ChangePrompt> changeInputs =
-			await FileChangePromptBuilder.GetFileChangeInput(commitChanges, gitClient, projectName, repositoryName, pullRequest,
-				cancellationToken);
+			await FileChangePromptBuilder.GetFileChangeInput(commitChanges);
 		return changeInputs;
 	}
 
@@ -322,7 +396,7 @@ internal class AiCommenter
 	}
 
 	private static async Task<(int tokenCount, double costCent)> AskAi(List<ChatMessage> chatMessagesStart,
-		Models.Model model, OpenAIService openAiService, List<AiCodeReviewComment> comments, int tokenCount,
+		Models.Model model, OpenAIService openAiService, List<AiCodeReviewComment> comments, string prComment, int tokenCount,
 		double costCent)
 	{
 		List<ChatMessage> chatMessages = [..chatMessagesStart];
@@ -354,7 +428,11 @@ internal class AiCommenter
 					costCent += tokenCompletionCostInCent * (completionResult.Usage.CompletionTokens ?? 0) / 1000.0;
 
 					chatMessages.Add(ChatMessage.FromUser(
-						"""
+						$$"""
+						Thank you for your change analysis. The original author provided the following Pull-Request comment:
+						```
+						{{prComment}}
+						```
 						Now provide constructive feedback on the changes.
 						Ignore code that was not changed in this PR.
 						Give a minimum of one and a maximum of three suggestions per file with the most relevant first.
@@ -369,7 +447,7 @@ internal class AiCommenter
 									]
 								},
 								...
-						    ]
+							]
 						}
 
 						Do not add additional text beyond the JSON.
@@ -388,7 +466,8 @@ internal class AiCommenter
 					{
 						Console.WriteLine(completionResult.Choices.First().Message.Content);
 						chatMessages.Add(completionResult.Choices.First().Message);
-						comments.AddRange(AiCodeReviewCommentParser.Parse(completionResult.Choices.First().Message.Content));
+						comments.AddRange(
+							AiCodeReviewCommentParser.Parse(completionResult.Choices.First().Message.Content));
 						tokenCount += completionResult.Usage.TotalTokens;
 						costCent += tokenPromptCostInCent * completionResult.Usage.PromptTokens / 1000.0;
 						costCent += tokenCompletionCostInCent * (completionResult.Usage.CompletionTokens ?? 0) / 1000.0;

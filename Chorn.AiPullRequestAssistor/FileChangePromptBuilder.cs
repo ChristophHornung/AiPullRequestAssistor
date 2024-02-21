@@ -8,23 +8,13 @@ namespace Chorn.AiPullRequestAssistor;
 
 internal class FileChangePromptBuilder
 {
-	internal static async Task<List<ChangePrompt>> GetFileChangeInput(GitCommitChanges commitChanges,
-		GitHttpClient gitClient,
-		string projectName, string repositoryName, GitPullRequest pullRequest, CancellationToken cancellationToken)
+	internal static Task<List<ChangePrompt>> GetFileChangeInput(IEnumerable<ExtendedGitChange> commitChanges)
 	{
 		List<ChangePrompt> inputs = [];
-		foreach (GitChange commitChange in commitChanges.Changes.Where(c =>
+		foreach (ExtendedGitChange commitChange in commitChanges.Where(c =>
 			         !c.Item.IsFolder && c.ChangeType is VersionControlChangeType.Edit or VersionControlChangeType.Add))
 		{
-			using Stream afterMergeFileContents = await gitClient.GetItemTextAsync(projectName, repositoryName,
-				path: commitChange.Item.Path, versionDescriptor: new GitVersionDescriptor
-				{
-					VersionType = GitVersionType.Commit,
-					Version = pullRequest.LastMergeCommit.CommitId,
-				}, cancellationToken: cancellationToken);
-
-			using StreamReader sr = new StreamReader(afterMergeFileContents);
-			string afterMergeContent = await sr.ReadToEndAsync();
+			string afterMergeContent = commitChange.NewContent.Content;
 
 			if (afterMergeContent.Contains('\0'))
 			{
@@ -45,17 +35,9 @@ internal class FileChangePromptBuilder
 			}
 			else if (commitChange.ChangeType == VersionControlChangeType.Edit)
 			{
-				using Stream beforeMergeFileContents = await gitClient.GetItemTextAsync(projectName, repositoryName,
-					path: commitChange.Item.Path, versionDescriptor: new GitVersionDescriptor
-					{
-						VersionType = GitVersionType.Commit,
-						Version = pullRequest.LastMergeTargetCommit.CommitId,
-					}, cancellationToken: cancellationToken);
-
-				using StreamReader sr1 = new StreamReader(beforeMergeFileContents);
-
+				string beforeMergeContent = commitChange.OldContent.Content;
 				InlineDiffBuilder differ = new InlineDiffBuilder(new Differ());
-				DiffPaneModel diff = differ.BuildDiffModel(await sr1.ReadToEndAsync(), afterMergeContent, true);
+				DiffPaneModel diff = differ.BuildDiffModel(beforeMergeContent, afterMergeContent, true);
 
 				StringBuilder diffBuilder = new();
 				diffBuilder.AppendLine("```diff");
@@ -88,6 +70,6 @@ internal class FileChangePromptBuilder
 			}
 		}
 
-		return inputs;
+		return Task.FromResult(inputs);
 	}
 }
