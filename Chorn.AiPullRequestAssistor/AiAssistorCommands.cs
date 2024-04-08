@@ -65,7 +65,7 @@ internal static class AiAssistorCommands
 		StrategyOption.AddAlias("-s");
 		StrategyOption.FromAmong(FileRequestStrategy.FillContextWithFiles.ToString(),
 			FileRequestStrategy.SingleRequestForFile.ToString());
-		StrategyOption.SetDefaultValue(FileRequestStrategy.SingleRequestForFile);
+		StrategyOption.SetDefaultValue(FileRequestStrategy.SingleRequestForFileDiffOnly);
 
 		PrIdArgument = new Argument<int>(name: "pull-request-id",
 			description: "The id of the pull request to comment on.");

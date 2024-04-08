@@ -40,13 +40,15 @@ internal class AiCommenter
 			throw new Exception("Invalid command.");
 		}
 
+		FileRequestStrategy fileRequestStrategy = arg.ParseResult.GetValueForOption(AiAssistorCommands.StrategyOption);
+
 		Console.WriteLine("Retrieving PR details.");
 
 		// Create the git client.
 		GitHttpClient gitClient = connection.GetClient<GitHttpClient>();
 
 		List<ChangePrompt> changeInputs =
-			await GetChangeInputs(gitClient, projectName, repositoryName, pullRequestId, cancellationToken);
+			await GetChangeInputs(gitClient, projectName, repositoryName, pullRequestId, cancellationToken, fileRequestStrategy);
 
 		OpenAiOptions options = new()
 		{
@@ -119,8 +121,7 @@ internal class AiCommenter
 		{
 			bool addToExisting =
 				input.Content.Length / 4 + chatMessages.Sum(c => c.Content!.Length) / 4 < maxSingleRequestTokenCount &&
-				arg.ParseResult.GetValueForOption(AiAssistorCommands.StrategyOption) !=
-				FileRequestStrategy.SingleRequestForFile;
+				fileRequestStrategy == FileRequestStrategy.FillContextWithFiles;
 
 			if (!addToExisting && hasContent && !allTokensSpend)
 			{
@@ -258,8 +259,8 @@ internal class AiCommenter
 	}
 
 	private static async Task<List<ChangePrompt>> GetChangeInputs(GitHttpClient gitClient, string projectName,
-		string repositoryName,
-		int pullRequestId, CancellationToken cancellationToken)
+		string repositoryName, int pullRequestId, CancellationToken cancellationToken,
+		FileRequestStrategy fileRequestStrategy)
 	{
 		// Get the pull request details
 		GitPullRequest pullRequest =
@@ -349,7 +350,7 @@ internal class AiCommenter
 		}
 
 		List<ChangePrompt> changeInputs =
-			await FileChangePromptBuilder.GetFileChangeInput(commitChanges);
+			await FileChangePromptBuilder.GetFileChangeInput(commitChanges, fileRequestStrategy);
 		return changeInputs;
 	}
 
