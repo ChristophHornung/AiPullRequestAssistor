@@ -459,6 +459,7 @@ internal class AiCommenter
 						Focus on the changed parts, don't mention line numbers.
 						Don't be too nit-picky, if something looks good it is ok to not have any suggestions.
 						Do not suggest adding more comments.
+						
 						"""));
 
 					completionResult = await openAiService.ChatCompletion.CreateCompletion(
