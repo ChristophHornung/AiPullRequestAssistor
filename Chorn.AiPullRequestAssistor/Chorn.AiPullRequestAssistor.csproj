@@ -24,7 +24,7 @@
 		<DebugType>None</DebugType>
 	</PropertyGroup>
 	<ItemGroup>
-		<PackageReference Include="Betalgo.OpenAI" Version="7.4.6" />
+		<PackageReference Include="Betalgo.OpenAI" Version="8.1.1" />
 		<PackageReference Include="DiffPlex" Version="1.7.2" />
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
 		<PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />

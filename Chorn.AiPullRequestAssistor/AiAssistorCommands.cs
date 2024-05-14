@@ -55,9 +55,14 @@ internal static class AiAssistorCommands
 		OpenAiModelOption = new Option<Models.Model>(name: "--model",
 			description: "The model to use for the AI request.");
 		OpenAiModelOption.AddAlias("-m");
-		OpenAiModelOption.FromAmong(Models.Model.Gpt_3_5_Turbo.ToString(), Models.Model.Gpt_3_5_Turbo_16k.ToString(),
+		OpenAiModelOption.FromAmong(
+			Models.Model.Gpt_3_5_Turbo.ToString(), 
+			Models.Model.Gpt_3_5_Turbo_16k.ToString(),
 			Models.Model.Gpt_4.ToString(),
-			Models.Model.Gpt_4_32k.ToString());
+			Models.Model.Gpt_4_32k.ToString(),
+			Models.Model.Gpt_4_turbo.ToString(),
+			Models.Model.Gpt_4_vision_preview.ToString()
+			);
 		OpenAiModelOption.SetDefaultValue(Models.Model.Gpt_3_5_Turbo);
 
 		StrategyOption = new Option<FileRequestStrategy>(name: "--strategy",
