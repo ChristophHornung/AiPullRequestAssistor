@@ -61,7 +61,8 @@ internal static class AiAssistorCommands
 			Models.Model.Gpt_4.ToString(),
 			Models.Model.Gpt_4_32k.ToString(),
 			Models.Model.Gpt_4_turbo.ToString(),
-			Models.Model.Gpt_4_vision_preview.ToString()
+			Models.Model.Gpt_4_vision_preview.ToString(),
+			Models.Model.Gpt_4o.ToString()
 			);
 		OpenAiModelOption.SetDefaultValue(Models.Model.Gpt_3_5_Turbo);
 

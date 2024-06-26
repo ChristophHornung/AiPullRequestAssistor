@@ -79,6 +79,7 @@ internal class AiCommenter
 			Models.Model.Gpt_4 => 7_500,
 			Models.Model.Gpt_4_32k => 31_500,
 			Models.Model.Gpt_4_turbo => 127_500,
+			Models.Model.Gpt_4o => 127_500,
 			Models.Model.Gpt_4_vision_preview => 127_500,
 			_ => 30_000
 		};
@@ -415,12 +416,19 @@ internal class AiCommenter
 		{
 			try
 			{
-				ChatCompletionCreateResponse completionResult = await openAiService.ChatCompletion.CreateCompletion(
-					new ChatCompletionCreateRequest
-					{
-						Messages = chatMessages,
-						Model = model.EnumToString()
-					});
+				ChatCompletionCreateRequest request = new()
+				{
+					Messages = chatMessages,
+					Model = model.EnumToString(),
+				};
+
+				if (model== Models.Model.Gpt_4_vision_preview)
+				{
+					request.MaxTokens = 127_000 - tokenCount;
+				}
+
+				ChatCompletionCreateResponse completionResult =
+					await openAiService.ChatCompletion.CreateCompletion(request);
 
 				if (completionResult.Successful)
 				{
@@ -462,12 +470,18 @@ internal class AiCommenter
 						
 						"""));
 
-					completionResult = await openAiService.ChatCompletion.CreateCompletion(
-						new ChatCompletionCreateRequest
-						{
-							Messages = chatMessages,
-							Model = model.EnumToString()
-						});
+					request = new ChatCompletionCreateRequest
+					{
+						Messages = chatMessages,
+						Model = model.EnumToString()
+					};
+
+					if (model == Models.Model.Gpt_4_vision_preview)
+					{
+						request.MaxTokens = 126_000 - tokenCount;
+					}
+
+					completionResult = await openAiService.ChatCompletion.CreateCompletion(request);
 
 					if (completionResult.Successful)
 					{
@@ -501,6 +515,7 @@ internal class AiCommenter
 		// Max size reached, we ask ChatGTP
 		if (model is not (Models.Model.Gpt_3_5_Turbo
 		    or Models.Model.Gpt_4
+		    or Models.Model.Gpt_4o
 		    or Models.Model.Gpt_4_turbo
 		    or Models.Model.Gpt_4_vision_preview
 		    or Models.Model.Gpt_4_32k
@@ -513,8 +528,9 @@ internal class AiCommenter
 		{
 			Models.Model.Gpt_3_5_Turbo => 0.15,
 			Models.Model.Gpt_3_5_Turbo_16k => 0.3,
-			Models.Model.Gpt_4 => 2.9,
-			Models.Model.Gpt_4_32k => 5.7,
+			Models.Model.Gpt_4 => 3,
+			Models.Model.Gpt_4o => 0.5,
+			Models.Model.Gpt_4_32k => 6,
 			Models.Model.Gpt_4_turbo => 1,
 			Models.Model.Gpt_4_vision_preview => 1,
 			_ => throw new ArgumentOutOfRangeException(nameof(model), model, null)
@@ -524,9 +540,10 @@ internal class AiCommenter
 		{
 			Models.Model.Gpt_3_5_Turbo => 0.15,
 			Models.Model.Gpt_3_5_Turbo_16k => 0.2,
-			Models.Model.Gpt_4 => 5.7,
-			Models.Model.Gpt_4_32k => 11.3,
-			Models.Model.Gpt_4_turbo => 2.9,
+			Models.Model.Gpt_4 => 6,
+			Models.Model.Gpt_4o => 1.5,
+			Models.Model.Gpt_4_32k => 12,
+			Models.Model.Gpt_4_turbo => 3,
 			Models.Model.Gpt_4_vision_preview => 2.9,
 			_ => throw new ArgumentOutOfRangeException(nameof(model), model, null)
 		};
